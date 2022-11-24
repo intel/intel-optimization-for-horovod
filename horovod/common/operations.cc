@@ -1,7 +1,7 @@
 // Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 // Modifications copyright (C) 2019 Uber Technologies, Inc.
 // Modifications copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
-// Modifications copyright (C) 2019 Intel Corporation
+// Modifications copyright (C) 2022 Intel Corporation.
 // Modifications copyright Microsoft
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,7 +72,11 @@
 #endif
 
 #if HAVE_CCL
+#if HAVE_GPU
+#include "ops/ccl_gpu_operations.h"
+#else
 #include "ops/ccl_operations.h"
+#endif
 #endif
 
 #if HAVE_GLOO
@@ -138,7 +142,11 @@ DDLContext ddl_context;
 #endif
 
 #if HAVE_CCL
+#if HAVE_GPU
+CCLGPUContext ccl_gpu_context;
+#else
 CCLContext ccl_context;
+#endif
 #endif
 
 std::unique_ptr<OperationManager> op_manager;
@@ -234,6 +242,20 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
 #endif
 
 #if HAVE_CCL
+#if HAVE_GPU
+  if (HOROVOD_GPU_ALLREDUCE == 'C')
+    allreduce_ops.push_back(std::make_shared<CCLGPUAllreduce>(
+        &ccl_gpu_context, &gpu_context, &state));
+  if (HOROVOD_GPU_ALLGATHER == 'C')
+    allgather_ops.push_back(std::make_shared<CCLGPUAllgather>(
+        &ccl_gpu_context, &gpu_context, &state));
+  if (HOROVOD_GPU_BROADCAST == 'C')
+    broadcast_ops.push_back(std::make_shared<CCLGPUBroadcast>(
+        &ccl_gpu_context, &gpu_context, &state));
+  if (HOROVOD_GPU_ALLTOALL == 'C')
+    alltoall_ops.push_back(std::make_shared<CCLGPUAlltoall>(
+        &ccl_gpu_context, &gpu_context, &state));
+#else
   if (state.cpu_operation == LibType::CCL) {
     allreduce_ops.push_back(
         std::make_shared<CCLAllreduce>(&ccl_context, &state));
@@ -243,6 +265,7 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
         std::make_shared<CCLBroadcast>(&ccl_context, &state));
     alltoall_ops.push_back(std::make_shared<CCLAlltoall>(&ccl_context, &state));
   }
+#endif
 #endif
 
 #if HAVE_MPI
@@ -403,13 +426,6 @@ ProcessSet& GetProcessSetOrAddUnitialized(std::vector<int> ranks, int& id) {
 bool RunLoopOnce(HorovodGlobalState& state);
 
 void BackgroundThreadLoop(HorovodGlobalState& state) {
-#if HAVE_CCL
-  // Initialize ccl context
-  if (state.cpu_operation == LibType::CCL) {
-    ccl_context.Initialize();
-  }
-#endif
-
 #if HAVE_MPI
   // Initialize mpi context
 #if HAVE_DDL
@@ -685,6 +701,14 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   LOG(INFO, horovod_global.global_controller->GetRank())
       << "Horovod initialized";
 
+#if HAVE_CCL
+#if HAVE_GPU
+  ccl_gpu_context.Initialize(state);
+#else
+  ccl_context.Initialize(state);
+#endif
+#endif
+
   // Iterate until shutdown.
   try {
     while (RunLoopOnce(state))
@@ -738,9 +762,13 @@ shutdown:
 #endif
 
 #if HAVE_CCL
+#if HAVE_GPU
+  ccl_gpu_context.Finalize(state);
+#else
   if (state.cpu_operation == LibType::CCL) {
     ccl_context.Finalize();
   }
+#endif
 #endif
 }
 
@@ -1236,6 +1264,14 @@ bool horovod_rocm_built() {
 #endif
 }
 
+bool horovod_sycl_built() {
+#if HAVE_SYCL
+  return true;
+#else
+  return false;
+#endif
+}
+
 int horovod_reduce_op_average() { return ReduceOp::AVERAGE; }
 
 int horovod_reduce_op_sum() { return ReduceOp::SUM; }
@@ -1504,6 +1540,7 @@ EnqueueTensorAllreduces(std::vector<std::shared_ptr<OpContext>>& contexts,
     entries.push_back(std::move(e));
   }
 
+  // TODO(Maozhou): NVTX on oneCCL?
   // Start appropriate NVTX range
   if (tensors.size() == 1) {
     auto& e = entries[0];

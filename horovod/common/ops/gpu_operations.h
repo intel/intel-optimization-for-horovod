@@ -1,6 +1,7 @@
 // Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 // Modifications copyright (C) 2019 Uber Technologies, Inc.
 // Modifications copyright (C) 2020, NVIDIA CORPORATION. All rights reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -89,7 +90,6 @@ public:
                    Timeline& timeline,
                    const std::function<void()>& error_check_callback = nullptr,
                    bool elastic = false);
-
   void StreamCreate(gpuStream_t* stream);
   void StreamSynchronize(gpuStream_t stream);
 
@@ -160,7 +160,7 @@ public:
                const Response& response) const override;
 
 protected:
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
   void MemcpyInFusionBuffer(const std::vector<TensorTableEntry>& entries,
                             const void*& fused_input_data, void*& buffer_data,
                             size_t& buffer_len) override;
@@ -203,7 +203,7 @@ public:
                const Response& response) const override;
 
 protected:
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
   void MemcpyInFusionBuffer(const std::vector<TensorTableEntry>& entries,
                             const int* displcmnts, int element_size,
                             void*& buffer_data) override;
@@ -267,7 +267,7 @@ protected:
   void MemcpyEntryOutFusionBuffer(const void* buffer_data_at_offset,
                                   TensorTableEntry& e) override;
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
   void MemcpyInFusionBuffer(
       const std::vector<TensorTableEntry>& entries,
       const std::vector<std::vector<TensorShape>>& output_shapes,

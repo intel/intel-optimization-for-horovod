@@ -19,8 +19,10 @@ namespace horovod {
 namespace torch {
 
 int HandleManager::AllocateHandle() {
-  int handle = last_handle_.fetch_add(1) + 1;
+  // FIXME(Maozhou): to confirm
+  // avoid race condition
   std::lock_guard<std::mutex> guard(mutex_);
+  int handle = last_handle_.fetch_add(1) + 1;
   results_[handle] = nullptr;
   return handle;
 }

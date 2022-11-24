@@ -48,7 +48,7 @@ if _MPI_LIB_AVAILABLE:
     from horovod.torch.mpi_ops import size, local_size, cross_size, rank, local_rank, cross_rank
     from horovod.torch.mpi_ops import mpi_threads_supported, mpi_enabled, mpi_built
     from horovod.torch.mpi_ops import gloo_enabled, gloo_built
-    from horovod.torch.mpi_ops import nccl_built, ddl_built, ccl_built, cuda_built, rocm_built
+    from horovod.torch.mpi_ops import nccl_built, ddl_built, ccl_built, cuda_built, rocm_built, sycl_built
     from horovod.torch.mpi_ops import ProcessSet, global_process_set, add_process_set, remove_process_set
     from horovod.torch.mpi_ops import Average, Sum, Adasum, Min, Max, Product
     from horovod.torch.mpi_ops import HorovodInternalError
@@ -58,4 +58,5 @@ if _MPI_LIB_AVAILABLE:
 # Please run this function in a subprocess
 def _check_has_gpu():
     import torch
-    return torch.cuda.is_available()
+    # TODO(Maozhou): confirm Python API changes
+    return torch.cuda.is_available() or torch.xpu.is_available()

@@ -1,4 +1,5 @@
 // Copyright 2018 Uber Technologies, Inc. All Rights Reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,30 +15,33 @@
 // =============================================================================
 
 #if HAVE_GPU
-#include <c10/cuda/CUDAStream.h>
+#if HAVE_CUDA
 #include <c10/cuda/CUDAException.h>
+#include <c10/cuda/CUDAStream.h>
 #include <cassert>
 #include <mutex>
 #include <queue>
 #include <unordered_map>
 #else
 #include <stdexcept>
+#endif // HAVE_CUDA
 #endif
 
+#include "device_util.h"
 #include "ready_event.h"
-#include "cuda_util.h"
 
 namespace horovod {
 namespace torch {
 
 #if HAVE_GPU
 struct ReadyEventRegistry {
-  std::unordered_map<int, std::queue<cudaEvent_t>> cuda_events;
+  std::unordered_map<int, std::queue<gpuEvent_t>> gpu_events;
   std::mutex mutex;
 };
 
 static ReadyEventRegistry ready_event_registry;
 
+#if HAVE_CUDA
 TorchReadyEvent::TorchReadyEvent(int device) : device_(device) {
   assert(device_ != CPU_DEVICE_ID);
 
@@ -46,32 +50,45 @@ TorchReadyEvent::TorchReadyEvent(int device) : device_(device) {
     std::lock_guard<std::mutex> guard(ready_event_registry.mutex);
     auto& queue = ready_event_registry.cuda_events[device_];
     if (!queue.empty()) {
-      cuda_event_ = queue.front();
+      event_ = queue.front();
       queue.pop();
     } else {
       C10_CUDA_CHECK(cudaEventCreateWithFlags(
-          &cuda_event_, cudaEventBlockingSync | cudaEventDisableTiming));
+          &event_, cudaEventBlockingSync | cudaEventDisableTiming));
     }
   }
   auto stream = c10::cuda::getCurrentCUDAStream(device_);
-  C10_CUDA_CHECK(cudaEventRecord(cuda_event_, stream));
+  C10_CUDA_CHECK(cudaEventRecord(event_, stream));
 }
 
 TorchReadyEvent::~TorchReadyEvent() {
   {
     std::lock_guard<std::mutex> guard(ready_event_registry.mutex);
     auto& queue = ready_event_registry.cuda_events[device_];
-    queue.push(cuda_event_);
+    queue.push(event_);
   }
 }
+#elif HAVE_SYCL
+TorchReadyEvent::TorchReadyEvent(int device) : device_(device) {
+  ctx_ = new TorchOpContext(device_);
+  event_ = ctx_->SYCLQueue().ext_oneapi_submit_barrier();
+}
+
+TorchReadyEvent::~TorchReadyEvent() { delete ctx_; }
+#endif
 
 bool TorchReadyEvent::Ready() const {
-  C10_CUDA_CHECK(cudaEventSynchronize(cuda_event_));
+#if HAVE_CUDA
+  C10_CUDA_CHECK(cudaEventSynchronize(event_));
   return true;
+#elif HAVE_SYCL
+  return event_.get_info<sycl::info::event::command_execution_status>() ==
+         sycl::info::event_command_status::complete;
+#endif
 }
 
 gpuEvent_t TorchReadyEvent::event() const {
-  return cuda_event_;
+  return event_;
 }
 #endif
 
@@ -84,8 +101,9 @@ std::shared_ptr<ReadyEvent> RecordReadyEvent(int device) {
 #if HAVE_GPU
     return std::make_shared<TorchReadyEvent>(device);
 #else
-    throw std::logic_error("Internal error. Requested ReadyEvent "
-                           "with GPU device but not compiled with CUDA.");
+    throw std::logic_error(
+        "Internal error. Requested ReadyEvent "
+        "with GPU device but not compiled with CUDA or SYCL.");
 #endif
   }
 }

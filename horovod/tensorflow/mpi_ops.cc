@@ -2,6 +2,7 @@
 // Modifications copyright (C) 2018 Uber Technologies, Inc.
 // Modifications copyright Microsoft
 // Modifications copyright (C) 2020, NVIDIA CORPORATION. All rights reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +24,7 @@
 #include <unordered_map>
 
 #define EIGEN_USE_THREADS
+// TODO(Maozhou): SYCL?
 #if HAVE_CUDA || HAVE_ROCM
 #define EIGEN_USE_GPU
 #endif  // HAVE_CUDA || HAVE_ROCM
@@ -35,6 +37,12 @@
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/framework/common_shape_fns.h"
+#if HAVE_SYCL
+// TODO(Maozhou): TF1.x support?
+#include "tensorflow/c/experimental/stream_executor/stream_executor.h"
+#include "tensorflow/c/kernels.h"
+#include "tensorflow/c/ops.h"
+#endif
 
 #if TENSORFLOW_VERSION >= 2006000000
 #include "tensorflow/core/framework/resource_mgr.h"
@@ -45,23 +53,27 @@
 #include "../common/common.h"
 
 #if HAVE_GPU
-
+using GpuStreamHandle = gpuStream_t;
 #if HAVE_CUDA
-#include <cuda_runtime.h>
-using GpuStreamHandle = cudaStream_t;
 #define gpuMemsetAsync cudaMemsetAsync
 #elif HAVE_ROCM
-#include <hip/hip_runtime.h>
-using GpuStreamHandle = hipStream_t;
 #define gpuMemsetAsync hipMemsetAsync
 #endif // HAVE_CUDA, HAVE_ROCM
+
+// TODO(Maozhou): to confirm
+#if HAVE_SYCL
+struct SP_Stream_st {
+  explicit SP_Stream_st(gpuStream_t stream_h) : stream_handle(stream_h) {}
+  gpuStream_t stream_handle;
+};
+#endif
 
 // Forward declaration of AsGpuStreamValue
 namespace stream_executor {
 namespace gpu {
 GpuStreamHandle AsGpuStreamValue(Stream* stream);
-} // namespace stream_executor
 } // namespace gpu
+} // namespace stream_executor
 #if TENSORFLOW_VERSION >= 2011000000
 #include "tensorflow/compiler/xla/stream_executor/stream.h"
 #else
@@ -74,6 +86,8 @@ GpuStreamHandle AsGpuStreamValue(Stream* stream);
 
 using namespace tensorflow;
 using namespace horovod;
+
+const char* const DEVICE_XPU = "XPU";
 
 namespace horovod {
 namespace tensorflow {
@@ -96,6 +110,8 @@ namespace {
     return DT_INT64;
   case common::HOROVOD_FLOAT16:
     return DT_HALF;
+  case common::HOROVOD_BF16:
+    return DT_BFLOAT16;
   case common::HOROVOD_FLOAT32:
     return DT_FLOAT;
   case common::HOROVOD_FLOAT64:
@@ -151,15 +167,27 @@ struct ReadyEventRegistry {
 
 static ReadyEventRegistry ready_event_registry;
 
+#if HAVE_SYCL
+class TFOpContext;
+#endif
+
 class TFReadyEvent : public common::ReadyEvent {
 public:
   TFReadyEvent(OpKernelContext* context);
+  // TODO(Maozhou): what for?
+#if HAVE_SYCL
+  TFReadyEvent(const TFReadyEvent& other) = delete;
+  TFReadyEvent& operator=(const TFReadyEvent& other) = delete;
+#endif
   ~TFReadyEvent();
   bool Ready() const override;
   gpuEvent_t event() const override;
 
 private:
   gpuEvent_t event_;
+#if HAVE_SYCL
+  TFOpContext* ctx_;
+#endif
   int device_ = CPU_DEVICE_ID;
 };
 #endif
@@ -205,12 +233,28 @@ public:
                 std::shared_ptr<common::Tensor>* tensor) override;
   virtual common::Framework framework() const override;
   OpKernelContext* GetKernelContext() const;
+#ifdef HAVE_SYCL
+  // return frameworks sycl-queue for given device
+  virtual sycl::queue SYCLQueue() const override;
+#endif
 
 private:
   OpKernelContext* context_ = nullptr;
 };
 
 #if HAVE_GPU
+#if HAVE_SYCL
+TFReadyEvent::TFReadyEvent(OpKernelContext* context) {
+  // TODO(Maozhou): cache SYCL event object?
+  ctx_ = new TFOpContext(context);
+  event_ = ctx_->SYCLQueue().ext_oneapi_submit_barrier();
+}
+bool TFReadyEvent::Ready() const {
+  // TODO(Maozhou): wait()?
+  return event_.get_info<sycl::info::event::command_execution_status>() ==
+         sycl::info::event_command_status::complete;
+}
+#else
 TFReadyEvent::TFReadyEvent(OpKernelContext* context) {
   device_ = GetDeviceID(context);
   {
@@ -232,11 +276,15 @@ bool TFReadyEvent::Ready() const {
   HVD_GPU_CHECK(gpuEventSynchronize(event_));
   return true;
 }
+#endif // HAVE_SYCL
 
 gpuEvent_t TFReadyEvent::event() const {
   return event_;
 }
 
+#if HAVE_SYCL
+TFReadyEvent::~TFReadyEvent() { delete ctx_; }
+#else
 TFReadyEvent::~TFReadyEvent() {
   {
     std::lock_guard<std::mutex> guard(ready_event_registry.mutex);
@@ -244,7 +292,7 @@ TFReadyEvent::~TFReadyEvent() {
     queue.push(event_);
   }
 }
-
+#endif // HAVE_SYCL
 #endif
 
 TFPersistentBuffer::TFPersistentBuffer(OpKernelContext* context, int64_t size) {
@@ -255,7 +303,8 @@ TFPersistentBuffer::TFPersistentBuffer(OpKernelContext* context, int64_t size) {
   if (!status.ok()) {
     throw status;
   }
-#if HAVE_GPU
+  // TODO(Maozhou): block host?
+#if HAVE_GPU && !HAVE_SYCL
   // On GPU allocation is asynchronous, we need to wait for it to
   // complete.
   auto device_context = context->op_device_context();
@@ -288,6 +337,8 @@ const common::DataType TFTensor::dtype() const {
     return common::HOROVOD_INT64;
   case DT_HALF:
     return common::HOROVOD_FLOAT16;
+  case DT_BFLOAT16:
+    return common::HOROVOD_BF16;
   case DT_FLOAT:
     return common::HOROVOD_FLOAT32;
   case DT_DOUBLE:
@@ -312,6 +363,17 @@ const void* TFTensor::data() const { return (const void*)tensor_.tensor_data().d
 int64_t TFTensor::size() const { return (int64_t)tensor_.tensor_data().size(); }
 
 const ::tensorflow::Tensor*  TFTensor::tensor() const { return &tensor_; }
+
+#if HAVE_SYCL
+sycl::queue TFOpContext::SYCLQueue() const {
+  if (GetDeviceID(context_) != CPU_DEVICE_ID) {
+    return *(TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(context_),
+                          TF_NewStatus())
+                 ->stream_handle);
+  }
+  throw std::logic_error("OpContext::SYCLQueue() must not be called for CPUs");
+}
+#endif
 
 // On GPU this event will signal that data is ready, and tensors are
 // allocated.
@@ -357,7 +419,8 @@ TFOpContext::AllocateOutput(int output_index, common::TensorShape shape,
   if (status.ok()) {
     *tensor = std::make_shared<TFTensor>(*tf_tensor);
   }
-#if HAVE_GPU
+  // TODO(Maozhou): block Host?
+#if HAVE_GPU && !HAVE_SYCL
   // On GPU allocation is asynchronous, we need to wait for it to
   // complete.
   auto device_context = context_->op_device_context();
@@ -389,14 +452,26 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
   }
 
   Status status = context_->allocate_temp(tf_data_type, ::tensorflow::TensorShape({num_elements}), zero_tensor.get(), tf_attribute);
+#if HAVE_SYCL
+  sycl::event ev;
+#endif
 
   if (device_ != CPU_DEVICE_ID) {
 #if HAVE_GPU
     auto device_context = context_->op_device_context();
+#if HAVE_SYCL
+    auto q =
+        device_context ? this->SYCLQueue() : sycl::queue{sycl::gpu_selector{}};
+    ev = q.submit([&](sycl::handler& cgh) {
+      constexpr uint8_t z = 0;
+      cgh.memset(const_cast<void*>((*tensor)->data()), z, (*tensor)->size());
+    });
+#else
     auto stream = (device_context != nullptr) ? stream_executor::gpu::AsGpuStreamValue(device_context->stream()) : 0;
     void *ptr = (void*)zero_tensor->tensor_data().data();
     auto size = zero_tensor->tensor_data().size();
     gpuMemsetAsync(ptr, 0, size, stream);
+#endif // HAVE_SYCL
 #endif
   } else {
     memset((void*)zero_tensor->tensor_data().data(), 0, zero_tensor->tensor_data().size());
@@ -406,12 +481,16 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
   }
 
 #if HAVE_GPU
+#if HAVE_SYCL
+  ev.wait();
+#else
   // On GPU allocation is asynchronous, we need to wait for it to
   // complete.
   auto device_context = context_->op_device_context();
   if (device_context != nullptr) {
     device_context->stream()->BlockHostUntilDone();
   }
+#endif
 #endif
   return ConvertStatus(status);
 }
@@ -478,14 +557,23 @@ public:
     auto hvd_output = std::make_shared<TFTensor>(*output);
     auto enqueue_result = EnqueueTensorAllreduce(
         hvd_context, hvd_tensor, hvd_output, ready_event_list, node_name, device,
+#if HAVE_SYCL
+        [context, hvd_context, done](const common::Status& status) {
+#else
         [context, done](const common::Status& status) {
+#endif
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
-                auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
-                HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
+              auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
+              HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -511,10 +599,12 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAllreduce").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLREDUCE
 REGISTER_KERNEL_BUILDER(Name("HorovodAllreduce").Device(DEVICE_GPU),
                         HorovodAllreduceOp);
+REGISTER_KERNEL_BUILDER(Name("HorovodAllreduce").Device(DEVICE_XPU),
+                        HorovodAllreduceOp);
 #endif
 
 REGISTER_OP("HorovodAllreduce")
-    .Attr("T: {uint8, int8, int32, int64, float16, float32, float64}")
+    .Attr("T: {uint8, int8, int32, int64, float16, bfloat16, float32, float64}")
     .Attr("reduce_op: int")
     .Attr("prescale_factor: float")
     .Attr("postscale_factor: float")
@@ -598,13 +688,19 @@ public:
     for (int i = 0; i < num_tensors_; ++i) {
       auto tensor = context->input(i);
       ready_event_lists.emplace_back(ready_event_list); // Same for all tensors in group
-      hvd_contexts.emplace_back(std::make_shared<TFOpContext>(context));
+      auto hvd_context = std::make_shared<TFOpContext>(context);
+      hvd_contexts.emplace_back(hvd_context);
+      // hvd_contexts.emplace_back(std::make_shared<TFOpContext>(context));
       hvd_tensors.emplace_back(std::make_shared<TFTensor>(tensor));
       names.emplace_back(node_name + "_" + std::to_string(i + 1) + "of" +
                          std::to_string(num_tensors));
       hvd_outputs.emplace_back(std::make_shared<TFTensor>(*outputs[i]));
       callbacks.emplace_back(
+#if HAVE_SYCL
+          [context, done, callback_mutex, callback_count, num_tensors, hvd_context]
+#else
           [context, done, callback_mutex, callback_count, num_tensors]
+#endif
           (const common::Status& status) {
             // Must only invoke callback on last tensor.
             std::lock_guard<std::mutex> guard(*callback_mutex);
@@ -615,8 +711,13 @@ public:
               if (hvd_event.event) {
                 auto device_context = context->op_device_context();
                 if (device_context != nullptr) {
-                    auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
-                    HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#if HAVE_SYCL
+                  hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                      {*(hvd_event.event)});
+#else
+                  auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
+                  HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
                 }
               }
 #endif
@@ -648,10 +749,12 @@ REGISTER_KERNEL_BUILDER(Name("HorovodGroupedAllreduce").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLREDUCE
 REGISTER_KERNEL_BUILDER(Name("HorovodGroupedAllreduce").Device(DEVICE_GPU),
                         HorovodGroupedAllreduceOp);
+REGISTER_KERNEL_BUILDER(Name("HorovodGroupedAllreduce").Device(DEVICE_XPU),
+                        HorovodGroupedAllreduceOp);
 #endif
 
 REGISTER_OP("HorovodGroupedAllreduce")
-    .Attr("T: {uint8, int8, int32, int64, float16, float32, float64}")
+    .Attr("T: {uint8, int8, int32, int64, float16, bfloat16, float32, float64}")
     .Attr("reduce_op: int")
     .Attr("prescale_factor: float")
     .Attr("postscale_factor: float")
@@ -711,14 +814,23 @@ public:
     auto hvd_tensor = std::make_shared<TFTensor>(tensor);
     auto enqueue_result = EnqueueTensorAllgather(
         hvd_context, hvd_tensor, ready_event_list, node_name, device,
+#if HAVE_GPU && HAVE_SYCL
+        [context, hvd_context, done](const common::Status& status) {
+#else
         [context, done](const common::Status& status) {
+#endif
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
-                auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
-                HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
+              auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
+              HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -738,6 +850,8 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_CPU),
                         HorovodAllgatherOp);
 #if HOROVOD_GPU_ALLGATHER
 REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_GPU),
+                        HorovodAllgatherOp);
+REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_XPU),
                         HorovodAllgatherOp);
 #endif
 
@@ -818,12 +932,18 @@ public:
       auto tensor = context->input(i);
       ready_event_lists.emplace_back(
           ready_event_list); // Same for all tensors in group
-      hvd_contexts.emplace_back(std::make_shared<TFOpContext>(context));
+      auto hvd_context = std::make_shared<TFOpContext>(context);
+      hvd_contexts.emplace_back(hvd_context);
       hvd_tensors.emplace_back(std::make_shared<TFTensor>(tensor));
       names.emplace_back(node_name + "_" + std::to_string(i + 1) + "of" +
                          std::to_string(num_tensors));
-      callbacks.emplace_back([context, done, callback_mutex, callback_count,
-                              num_tensors](const common::Status& status) {
+      callbacks.emplace_back(
+#if HAVE_GPU && HAVE_SYCL
+        [context, done, callback_mutex, callback_count, num_tensors, hvd_context]
+#else
+        [context, done, callback_mutex, callback_count, num_tensors]
+#endif
+        (const common::Status& status) {
         // Must only invoke callback on last tensor.
         std::lock_guard<std::mutex> guard(*callback_mutex);
         (*callback_count)++;
@@ -833,9 +953,14 @@ public:
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
+#if HAVE_SYCL
+                  hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                      {*(hvd_event.event)});
+#else
               auto stream = stream_executor::gpu::AsGpuStreamValue(
                   device_context->stream());
               HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -935,15 +1060,25 @@ public:
       hvd_output = std::make_shared<TFTensor>(*output);
     }
     auto enqueue_result = EnqueueTensorBroadcast(
-        hvd_context, hvd_tensor, hvd_output, root_rank_, ready_event_list, node_name,
-        device, [context, done](const common::Status& status) {
+        hvd_context, hvd_tensor, hvd_output, root_rank_, ready_event_list,
+        node_name, device,
+#if HAVE_GPU && HAVE_SYCL
+        [context, hvd_context, done](const common::Status& status) {
+#else
+        [context, done](const common::Status& status) {
+#endif
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
-                auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
-                HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
+              auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
+              HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -964,6 +1099,8 @@ REGISTER_KERNEL_BUILDER(Name("HorovodBroadcast").Device(DEVICE_CPU),
                         HorovodBroadcastOp);
 #if HOROVOD_GPU_BROADCAST
 REGISTER_KERNEL_BUILDER(Name("HorovodBroadcast").Device(DEVICE_GPU),
+                        HorovodBroadcastOp);
+REGISTER_KERNEL_BUILDER(Name("HorovodBroadcast").Device(DEVICE_XPU),
                         HorovodBroadcastOp);
 #endif
 
@@ -1147,15 +1284,25 @@ private:
     auto enqueue_result = EnqueueTensorBroadcast(
         hvd_context, hvd_tensor, hvd_output, root_rank_, ready_event_list,
         node_name, device,
-        [context, any_failures_and_tensors_done](const common::Status& status) {
+#if HAVE_GPU && HAVE_SYCL
+        [context, any_failures_and_tensors_done, hvd_context]
+#else
+        [context, any_failures_and_tensors_done]
+#endif
+        (const common::Status& status) {
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
               auto stream = stream_executor::gpu::AsGpuStreamValue(
                   device_context->stream());
               HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -1285,15 +1432,25 @@ public:
     auto hvd_tensor = std::make_shared<TFTensor>(tensor);
     auto enqueue_result = EnqueueTensorReducescatter(
         hvd_context, hvd_tensor, ready_event_list, node_name, device,
-        [context, done](const common::Status& status) {
+#if HAVE_GPU && HAVE_SYCL
+        [context, done, hvd_context]
+#else
+        [context, done]
+#endif
+        (const common::Status& status) {
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
               auto stream = stream_executor::gpu::AsGpuStreamValue(
                   device_context->stream());
               HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -1400,12 +1557,18 @@ public:
       auto tensor = context->input(i);
       ready_event_lists.emplace_back(
           ready_event_list); // Same for all tensors in group
-      hvd_contexts.emplace_back(std::make_shared<TFOpContext>(context));
+      auto hvd_context = std::make_shared<TFOpContext>(context);
+      hvd_contexts.emplace_back(hvd_context);
       hvd_tensors.emplace_back(std::make_shared<TFTensor>(tensor));
       names.emplace_back(node_name + "_" + std::to_string(i + 1) + "of" +
                          std::to_string(num_tensors));
-      callbacks.emplace_back([context, done, callback_mutex, callback_count,
-                              num_tensors](const common::Status& status) {
+      callbacks.emplace_back(
+#if HAVE_GPU && HAVE_SYCL
+        [context, done, callback_mutex, callback_count, num_tensors, hvd_context]
+#else
+        [context, done, callback_mutex, callback_count, num_tensors]
+#endif
+        (const common::Status& status) {
         // Must only invoke callback on last tensor.
         std::lock_guard<std::mutex> guard(*callback_mutex);
         (*callback_count)++;
@@ -1415,9 +1578,14 @@ public:
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
+#if HAVE_SYCL
+                  hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                      {*(hvd_event.event)});
+#else
               auto stream = stream_executor::gpu::AsGpuStreamValue(
                   device_context->stream());
               HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -1507,14 +1675,23 @@ public:
     auto enqueue_result = EnqueueJoin(
       hvd_context, hvd_output, ready_event_list,
       JOIN_TENSOR_NAME, device,
+#if HAVE_GPU && HAVE_SYCL
+        [context, hvd_context, done](const common::Status& status) {
+#else
         [context, done](const common::Status& status) {
+#endif
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
-                auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
-                HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
+              auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
+              HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -1529,6 +1706,9 @@ public:
 #if HOROVOD_GPU_ALLREDUCE
 REGISTER_KERNEL_BUILDER(Name("HorovodJoin")
                             .Device(DEVICE_GPU)
+                            .HostMemory("output"),
+                        HorovodJoinOp);
+REGISTER_KERNEL_BUILDER(Name("HorovodJoin").Device(DEVICE_XPU)
                             .HostMemory("output"),
                         HorovodJoinOp);
 #else
@@ -1583,6 +1763,9 @@ REGISTER_KERNEL_BUILDER(
 REGISTER_KERNEL_BUILDER(
     Name("HorovodSize").Device(DEVICE_GPU).HostMemory("size"),
     HorovodReturnScalarForProcessSetOp<int, common::horovod_process_set_size>);
+REGISTER_KERNEL_BUILDER(
+    Name("HorovodSize").Device(DEVICE_XPU).HostMemory("size"),
+    HorovodReturnScalarForProcessSetOp<int, common::horovod_process_set_size>);
 #endif
 
 REGISTER_OP("HorovodSize")
@@ -1607,6 +1790,9 @@ REGISTER_KERNEL_BUILDER(
 #if HAVE_GPU
 REGISTER_KERNEL_BUILDER(
     Name("HorovodProcessSetIncluded").Device(DEVICE_GPU).HostMemory("included"),
+    HorovodReturnScalarForProcessSetOp<int, common::horovod_process_set_included>);
+REGISTER_KERNEL_BUILDER(
+    Name("HorovodProcessSetIncluded").Device(DEVICE_XPU).HostMemory("included"),
     HorovodReturnScalarForProcessSetOp<int, common::horovod_process_set_included>);
 #endif
 
@@ -1651,6 +1837,9 @@ REGISTER_KERNEL_BUILDER(
 REGISTER_KERNEL_BUILDER(
     Name("HorovodLocalSize").Device(DEVICE_GPU).HostMemory("local_size"),
     HorovodReturnScalarOp<int, common::horovod_local_size>);
+REGISTER_KERNEL_BUILDER(
+    Name("HorovodLocalSize").Device(DEVICE_XPU).HostMemory("local_size"),
+    HorovodReturnScalarOp<int, common::horovod_local_size>);
 #endif
 
 REGISTER_OP("HorovodLocalSize")
@@ -1676,6 +1865,9 @@ REGISTER_KERNEL_BUILDER(
 REGISTER_KERNEL_BUILDER(
     Name("HorovodRank").Device(DEVICE_GPU).HostMemory("rank"),
     HorovodReturnScalarOp<int, common::horovod_rank>);
+REGISTER_KERNEL_BUILDER(
+    Name("HorovodRank").Device(DEVICE_XPU).HostMemory("rank"),
+    HorovodReturnScalarOp<int, common::horovod_rank>);
 #endif
 
 REGISTER_OP("HorovodRank")
@@ -1698,6 +1890,9 @@ REGISTER_KERNEL_BUILDER(
 #if HAVE_GPU
 REGISTER_KERNEL_BUILDER(
     Name("HorovodLocalRank").Device(DEVICE_GPU).HostMemory("local_rank"),
+    HorovodReturnScalarOp<int, common::horovod_local_rank>);
+REGISTER_KERNEL_BUILDER(
+    Name("HorovodLocalRank").Device(DEVICE_XPU).HostMemory("local_rank"),
     HorovodReturnScalarOp<int, common::horovod_local_rank>);
 #endif
 
@@ -1749,14 +1944,23 @@ public:
     auto splits_tensor = std::make_shared<TFTensor>(splits);
     auto enqueue_result = EnqueueTensorAlltoall(
         hvd_context, hvd_tensor, splits_tensor, ready_event_list, node_name, device,
+#if HAVE_GPU && HAVE_SYCL
+        [context, hvd_context, done](const common::Status& status) {
+#else
         [context, done](const common::Status& status) {
+#endif
 #if HAVE_GPU
           auto hvd_event = status.event;
           if (hvd_event.event) {
             auto device_context = context->op_device_context();
             if (device_context != nullptr) {
-                auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
-                HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#if HAVE_SYCL
+              hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+                  {*(hvd_event.event)});
+#else
+              auto stream = stream_executor::gpu::AsGpuStreamValue(device_context->stream());
+              HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
             }
           }
 #endif
@@ -1776,6 +1980,11 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLTOALL
 REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall")
                             .Device(DEVICE_GPU)
+                            .HostMemory("splits")
+                            .HostMemory("received_splits"),
+                        HorovodAlltoallOp);
+REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall")
+                            .Device(DEVICE_XPU)
                             .HostMemory("splits")
                             .HostMemory("received_splits"),
                         HorovodAlltoallOp);

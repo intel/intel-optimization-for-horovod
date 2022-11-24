@@ -99,6 +99,9 @@ bool horovod_cuda_built();
 // C interface to return flag indicating whether Horovod was compiled with ROCm support.
 bool horovod_rocm_built();
 
+// C interface to return flag indicating whether Horovod was compiled with SYCL support.
+bool horovod_sycl_built();
+
 // C interface to return value of the ReduceOp::AVERAGE enum field.
 int horovod_reduce_op_average();
 

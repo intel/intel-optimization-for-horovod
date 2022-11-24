@@ -1,5 +1,6 @@
 // Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 // Modifications copyright (C) 2019 Uber Technologies, Inc.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -93,6 +94,13 @@ struct HorovodGlobalState {
 
   // Index of current GPU stream to use
   int current_nccl_stream = 0;
+
+  // TODO(Maozhou): num_gpu_streams & current_gpu_stream?
+  // Number of CCL GPU streams to use
+  int num_ccl_streams = 1;
+
+  // Index of current CCL GPU stream to use
+  int current_ccl_stream = 0;
 
   // A LibType indicating what framework we are using to perform CPU operations.
   LibType cpu_operation;

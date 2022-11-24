@@ -1,4 +1,5 @@
 // Copyright 2018 Uber Technologies, Inc. All Rights Reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +18,17 @@
 #define HOROVOD_TORCH_READY_EVENT_H
 
 #if HAVE_GPU
+#if HAVE_CUDA
 #include "cuda_runtime.h"
+#elif HAVE_SYCL
+#if !defined(__INTEL_LLVM_COMPILER) ||                                         \
+    (defined(__INTEL_LLVM_COMPILER) && __INTEL_LLVM_COMPILER < 20230000)
+#include <CL/sycl.hpp>
+#else
+#include <sycl.hpp>
+#endif // __INTEL_LLVM_COMPILER
+#include "adapter_v2.h"
+#endif // HAVE_CUDA
 #endif
 
 #include <memory>
@@ -33,13 +44,22 @@ using namespace horovod::common;
 class TorchReadyEvent : public ReadyEvent {
 public:
   TorchReadyEvent(int device);
+#if HAVE_SYCL
+  TorchReadyEvent(const TorchReadyEvent& other) = delete;
+  TorchReadyEvent& operator=(const TorchReadyEvent& other) = delete;
+#endif
   ~TorchReadyEvent();
   virtual bool Ready() const override;
   gpuEvent_t event() const override;
 
 private:
   int device_ = CPU_DEVICE_ID;
-  gpuEvent_t cuda_event_ = nullptr;
+  // TODO(Maozhou): == nullptr?
+  gpuEvent_t event_;
+#if HAVE_SYCL
+  bool is_enabled;
+  TorchOpContext* ctx_;
+#endif
 };
 #endif
 

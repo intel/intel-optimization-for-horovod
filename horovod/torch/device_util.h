@@ -1,4 +1,5 @@
 // Copyright 2018 Uber Technologies, Inc. All Rights Reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,22 +14,31 @@
 // limitations under the License.
 // =============================================================================
 
-#ifndef HOROVOD_TORCH_CUDA_UTIL_H
-#define HOROVOD_TORCH_CUDA_UTIL_H
+#ifndef HOROVOD_TORCH_DEVICE_UTIL_H
+#define HOROVOD_TORCH_DEVICE_UTIL_H
+
+#if HAVE_SYCL
+#include <c10/core/Device.h>
+using dev_index_t = c10::DeviceIndex;
+#else
+using dev_index_t = int;
+#endif
+
+#include "../common/common.h"
 
 namespace horovod {
 namespace torch {
 
 class with_device {
 public:
-  with_device(int device);
+  with_device(dev_index_t device);
   ~with_device();
 
 private:
-  int restore_device_ = CPU_DEVICE_ID;
+  dev_index_t restore_device_ = CPU_DEVICE_ID;
 };
 
-}
-}
+} // namespace torch
+} // namespace horovod
 
-#endif // HOROVOD_TORCH_CUDA_UTIL_H
+#endif // HOROVOD_TORCH_DEVICE_UTIL_H

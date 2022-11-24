@@ -64,6 +64,27 @@ class FP16Compressor(Compressor):
         return tensor_decompressed
 
 
+class BF16Compressor(Compressor):
+    """Compress all floating point gradients to BF16."""
+    @staticmethod
+    def compress(tensor):
+        """Downcasts the tensor to BF16."""
+        tensor_compressed = tensor
+        if tensor.dtype.is_floating:
+            # Only allow compression from other floating point types
+            tensor_compressed = tf.cast(tensor, dtype=tf.bfloat16)
+        return tensor_compressed, tensor.dtype
+
+    @staticmethod
+    def decompress(tensor, ctx):
+        """Upcasts the tensor to the initialization dtype."""
+        tensor_decompressed = tensor
+        dtype = ctx
+        if dtype.is_floating:
+            tensor_decompressed = tf.cast(tensor, dtype=dtype)
+        return tensor_decompressed
+
+
 class Compression(object):
     """Optional gradient compression algorithm used during allreduce."""
 
@@ -72,3 +93,6 @@ class Compression(object):
 
     """Compress all floating point gradients to 16-bit."""
     fp16 = FP16Compressor
+
+    """Compress all floating point gradients to bf16."""
+    bf16 = BF16Compressor

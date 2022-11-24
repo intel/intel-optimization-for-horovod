@@ -1,6 +1,7 @@
 // Copyright 2018 Uber Technologies, Inc. All Rights Reserved.
 // Modifications copyright Microsoft
 // Modifications copyright (C) 2020, NVIDIA CORPORATION. All rights reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,9 +17,18 @@
 // =============================================================================
 
 #if HAVE_GPU
-#include <c10/cuda/CUDAStream.h>
+#if CUDA
 #include <c10/cuda/CUDAException.h>
+#include <c10/cuda/CUDAStream.h>
+#elif HAVE_SYCL
+#if !defined(__INTEL_LLVM_COMPILER) ||                                         \
+    (defined(__INTEL_LLVM_COMPILER) && __INTEL_LLVM_COMPILER < 20230000)
+#include <CL/sycl.hpp>
+#else
+#include <sycl.hpp>
 #endif
+#endif // HAVE_CUDA
+#endif // HAVE_GPU
 
 #include <chrono>
 #include <memory>
@@ -28,7 +38,7 @@
 
 #include "../common/operations.h"
 #include "adapter_v2.h"
-#include "cuda_util.h"
+#include "device_util.h"
 #include "handle_manager.h"
 #include "ready_event.h"
 
@@ -48,7 +58,7 @@ std::string GetOpName(const std::string& prefix, const std::string& name,
 }
 
 int GetDeviceID(const ::torch::Tensor& tensor) {
-  if (tensor.device().is_cuda()) {
+  if (tensor.device().is_cuda() or tensor.device().is_xpu()) {
     return tensor.device().index();
   }
   return CPU_DEVICE_ID;
@@ -64,7 +74,7 @@ void DivideInPlace(::torch::Tensor& tensor, int divisor) {
   tensor.div_(divisor);
 }
 
-#if HAVE_GPU
+#if HAVE_GPU && HAVE_CUDA
 gpuStream_t GetGPUStream(int device) {
   return c10::cuda::getCurrentCUDAStream(device);
 }
@@ -87,16 +97,26 @@ int DoAllreduce(::torch::Tensor tensor, ::torch::Tensor output, int divisor,
   auto hvd_output = std::make_shared<TorchTensor>(output);
 
   ReduceOp reduce_op = static_cast<ReduceOp>(reduce_op_int);
-  
+
   auto enqueue_result = EnqueueTensorAllreduce(
       hvd_context, hvd_tensor, hvd_output, ready_event_list,
       GetOpName("allreduce", name, handle), device,
-      [handle, divisor, output, device](const Status& status) mutable {
+#if HAVE_GPU && HAVE_SYCL
+      [handle, divisor, output, hvd_context]
+#else
+      [handle, divisor, output, device]
+#endif
+      (const Status& status) mutable {
 #if HAVE_GPU
         auto hvd_event = status.event;
         if (hvd_event.event) {
+#if HAVE_SYCL
+          hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+              {*(hvd_event.event)});
+#else
           auto stream = GetGPUStream(device);
           HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
         }
 #endif
         // Will execute in the `device` context.
@@ -193,15 +213,27 @@ int DoGroupedAllreduce(const std::vector<::torch::Tensor>& tensors,
     ready_event_lists.emplace_back(ready_event_list); // Same for all tensors in group
     names.emplace_back(base_name + "_" + std::to_string(i+1) + "of" + std::to_string(num_tensors));
     auto output = outputs[i];
-    callbacks.emplace_back(
-      [handle, divisor, output, callback_mutex, callback_count, num_tensors,
-       device](const Status& status) mutable {
+#if HAVE_GPU && HAVE_SYCL
+    auto hvd_context = hvd_contexts[i];
+#endif
+    callbacks.emplace_back([handle, divisor, output, callback_mutex,
+                            callback_count, num_tensors,
+#if HAVE_GPU && HAVE_SYCL
+                            hvd_context](const Status& status) mutable {
+#else
+                            device](const Status& status) mutable {
+#endif
 #if HAVE_GPU
-        auto hvd_event = status.event;
-        if (hvd_event.event) {
-          auto stream = GetGPUStream(device);
-          HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
-        }
+      auto hvd_event = status.event;
+      if (hvd_event.event) {
+#if HAVE_SYCL
+        hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+            {*(hvd_event.event)});
+#else
+        auto stream = GetGPUStream(device);
+        HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
+      }
 #endif
         // Will execute in the `device` context.
         if (divisor > 1) {
@@ -317,16 +349,26 @@ int DoAllgather(::torch::Tensor tensor, ::torch::Tensor output,
   auto enqueue_result =
       EnqueueTensorAllgather(hvd_context, hvd_tensor, ready_event_list,
                              GetOpName("allgather", name, handle), device,
-                             [handle, device](const Status& status) {
-#if HAVE_GPU
-                               auto hvd_event = status.event;
-                               if (hvd_event.event) {
-                                 auto stream = GetGPUStream(device);
-                                 HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
-                               }
+#if HAVE_GPU && HAVE_SYCL
+      [handle, hvd_context](const Status& status) {
+#else
+      [handle, device](const Status& status) {
 #endif
-                               handle_manager.MarkDone(handle, status);
-                             }, process_set_id);
+#if HAVE_GPU
+        auto hvd_event = status.event;
+        if (hvd_event.event) {
+#if HAVE_SYCL
+          hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+              {*(hvd_event.event)});
+#else
+          auto stream = GetGPUStream(device);
+          HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
+        }
+#endif
+        handle_manager.MarkDone(handle, status);
+      },
+      process_set_id);
   ThrowIfError(enqueue_result);
 
   return handle;
@@ -414,14 +456,26 @@ int DoGroupedAllgather(const std::vector<::torch::Tensor>& tensors,
     names.emplace_back(base_name + "_" + std::to_string(i + 1) + "of" +
                        std::to_string(num_tensors));
     auto output = outputs[i];
-    callbacks.emplace_back([handle, output, callback_mutex,
-                            callback_count, num_tensors,
+#if HAVE_GPU && HAVE_SYCL
+    auto hvd_context = hvd_contexts[i];
+#endif
+    callbacks.emplace_back([handle, output, callback_mutex, callback_count,
+                            num_tensors,
+#if HAVE_GPU && HAVE_SYCL
+                            hvd_context](const Status& status) mutable {
+#else
                             device](const Status& status) mutable {
+#endif
 #if HAVE_GPU
       auto hvd_event = status.event;
       if (hvd_event.event) {
+#if HAVE_SYCL
+        hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+            {*(hvd_event.event)});
+#else
         auto stream = GetGPUStream(device);
         HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
       }
 #endif
       // Must only call MarkDone on last tensor.
@@ -549,16 +603,27 @@ int DoBroadcast(::torch::Tensor tensor, ::torch::Tensor output, int root_rank,
   auto enqueue_result =
       EnqueueTensorBroadcast(hvd_context, hvd_tensor, hvd_output, root_rank,
                              ready_event_list, GetOpName("broadcast", name, handle),
-                             device, [handle, device](const Status& status) {
-#if HAVE_GPU
-                               auto hvd_event = status.event;
-                               if (hvd_event.event) {
-                                 auto stream = GetGPUStream(device);
-                                 HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
-                               }
+                             device,
+#if HAVE_GPU && HAVE_SYCL
+      [handle, hvd_context](const Status& status) {
+#else
+      [handle, device](const Status& status) {
 #endif
-                               handle_manager.MarkDone(handle, status);
-                             }, process_set_id);
+#if HAVE_GPU
+        auto hvd_event = status.event;
+        if (hvd_event.event) {
+#if HAVE_SYCL
+          hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+              {*(hvd_event.event)});
+#else
+          auto stream = GetGPUStream(device);
+          HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
+        }
+#endif
+        handle_manager.MarkDone(handle, status);
+      },
+      process_set_id);
   ThrowIfError(enqueue_result);
 
   return handle;
@@ -628,12 +693,21 @@ int DoAlltoall(::torch::Tensor tensor, ::torch::Tensor splits,
       hvd_context, hvd_tensor, hvd_cpu_splits, ready_event_list,
       GetOpName("alltoall", name, handle), device,
       [handle, cpu_received_splits, output_received_splits,
+#if HAVE_GPU && HAVE_SYCL
+       received_splits_device, hvd_context](const Status& status) mutable {
+#else
        received_splits_device, device](const Status& status) mutable {
+#endif
 #if HAVE_GPU
         auto hvd_event = status.event;
         if (hvd_event.event) {
+#if HAVE_SYCL
+          hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+              {*(hvd_event.event)});
+#else
           auto stream = GetGPUStream(device);
           HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
         }
 #endif
         if (received_splits_device != CPU_DEVICE_ID) {
@@ -730,13 +804,22 @@ int DoReducescatter(::torch::Tensor tensor, ::torch::Tensor output,
   auto enqueue_result = EnqueueTensorReducescatter(
       hvd_context, hvd_tensor, ready_event_list,
       GetOpName("reducescatter", name, handle), device,
+#if HAVE_GPU && HAVE_SYCL
+      [handle, reduce_op, output, hvd_context,
+#else
       [handle, reduce_op, output, device,
+#endif
        process_set_id](const Status& status) mutable {
 #if HAVE_GPU
         auto hvd_event = status.event;
         if (hvd_event.event) {
+#if HAVE_SYCL
+          hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+              {*(hvd_event.event)});
+#else
           auto stream = GetGPUStream(device);
           HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
         }
 #endif
         // Will execute in the `device` context.
@@ -847,14 +930,26 @@ int DoGroupedReducescatter(const std::vector<::torch::Tensor>& tensors,
     names.emplace_back(base_name + "_" + std::to_string(i + 1) + "of" +
                        std::to_string(num_tensors));
     auto output = outputs[i];
+#if HAVE_GPU && HAVE_SYCL
+    auto hvd_context = hvd_contexts[i];
+#endif
     callbacks.emplace_back([handle, reduce_op, output, callback_mutex,
+#if HAVE_GPU && HAVE_SYCL
+                            callback_count, num_tensors, hvd_context,
+#else
                             callback_count, num_tensors, device,
+#endif
                             process_set_id](const Status& status) mutable {
 #if HAVE_GPU
       auto hvd_event = status.event;
       if (hvd_event.event) {
+#if HAVE_SYCL
+        hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+            {*(hvd_event.event)});
+#else
         auto stream = GetGPUStream(device);
         HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
       }
 #endif
       // Will execute in the `device` context.
@@ -988,12 +1083,21 @@ int DoJoin(::torch::Tensor output_last_joined_rank, int device) {
 
   auto enqueue_result = EnqueueJoin(
       hvd_context, hvd_output, ready_event_list, JOIN_TENSOR_NAME, device,
+#if HAVE_GPU && HAVE_SYCL
+      [handle, hvd_context](const Status& status) mutable {
+#else
       [handle, device](const Status& status) mutable {
+#endif
 #if HAVE_GPU
         auto hvd_event = status.event;
         if (hvd_event.event) {
+#if HAVE_SYCL
+          hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
+              {*(hvd_event.event)});
+#else
           auto stream = GetGPUStream(device);
           HVD_GPU_CHECK(gpuStreamWaitEvent(stream, *(hvd_event.event), 0));
+#endif
         }
 #endif
         handle_manager.MarkDone(handle, status);
@@ -1042,7 +1146,14 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_allreduce_async_torch_HalfTensor", &DoAllreduce);
   m.def("horovod_torch_allreduce_async_torch_FloatTensor", &DoAllreduce);
   m.def("horovod_torch_allreduce_async_torch_DoubleTensor", &DoAllreduce);
-#if HOROVOD_GPU_ALLREDUCE
+#if HOROVOD_GPU_ALLREDUCE == 'C'
+  m.def("horovod_torch_allreduce_async_torch_xpu_IntTensor", &DoAllreduce);
+  m.def("horovod_torch_allreduce_async_torch_xpu_LongTensor", &DoAllreduce);
+  m.def("horovod_torch_allreduce_async_torch_xpu_HalfTensor", &DoAllreduce);
+  m.def("horovod_torch_allreduce_async_torch_xpu_FloatTensor", &DoAllreduce);
+  m.def("horovod_torch_allreduce_async_torch_xpu_DoubleTensor", &DoAllreduce);
+  m.def("horovod_torch_allreduce_async_torch_xpu_BFloat16Tensor", &DoAllreduce);
+#elif HOROVOD_GPU_ALLREDUCE
   m.def("horovod_torch_allreduce_async_torch_cuda_IntTensor", &DoAllreduce);
   m.def("horovod_torch_allreduce_async_torch_cuda_LongTensor", &DoAllreduce);
   m.def("horovod_torch_allreduce_async_torch_cuda_HalfTensor", &DoAllreduce);
@@ -1067,7 +1178,14 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_grouped_allreduce_async_torch_HalfTensor", &DoGroupedAllreduce);
   m.def("horovod_torch_grouped_allreduce_async_torch_FloatTensor", &DoGroupedAllreduce);
   m.def("horovod_torch_grouped_allreduce_async_torch_DoubleTensor", &DoGroupedAllreduce);
-#if HOROVOD_GPU_ALLREDUCE
+#if HOROVOD_GPU_ALLREDUCE == 'C'
+  m.def("horovod_torch_grouped_allreduce_async_torch_xpu_IntTensor", &DoGroupedAllreduce);
+  m.def("horovod_torch_grouped_allreduce_async_torch_xpu_LongTensor", &DoGroupedAllreduce);
+  m.def("horovod_torch_grouped_allreduce_async_torch_xpu_HalfTensor", &DoGroupedAllreduce);
+  m.def("horovod_torch_grouped_allreduce_async_torch_xpu_FloatTensor", &DoGroupedAllreduce);
+  m.def("horovod_torch_grouped_allreduce_async_torch_xpu_DoubleTensor", &DoGroupedAllreduce);
+  m.def("horovod_torch_grouped_allreduce_async_torch_xpu_BFloat16Tensor", &DoGroupedAllreduce);
+#elif HOROVOD_GPU_ALLREDUCE
   m.def("horovod_torch_grouped_allreduce_async_torch_cuda_IntTensor", &DoGroupedAllreduce);
   m.def("horovod_torch_grouped_allreduce_async_torch_cuda_LongTensor", &DoGroupedAllreduce);
   m.def("horovod_torch_grouped_allreduce_async_torch_cuda_HalfTensor", &DoGroupedAllreduce);
@@ -1095,7 +1213,16 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_allgather_async_torch_HalfTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_FloatTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_DoubleTensor", &DoAllgather);
-#if HOROVOD_GPU_ALLGATHER
+#if HOROVOD_GPU_ALLGATHER == 'C'
+  m.def("horovod_torch_allgather_async_torch_xpu_ByteTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_CharTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_ShortTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_IntTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_LongTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_HalfTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_FloatTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_DoubleTensor", &DoAllgather);
+#elif HOROVOD_GPU_ALLGATHER
   m.def("horovod_torch_allgather_async_torch_cuda_ByteTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_cuda_CharTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_cuda_ShortTensor", &DoAllgather);
@@ -1185,7 +1312,17 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_broadcast_async_torch_HalfTensor", &DoBroadcast);
   m.def("horovod_torch_broadcast_async_torch_FloatTensor", &DoBroadcast);
   m.def("horovod_torch_broadcast_async_torch_DoubleTensor", &DoBroadcast);
-#if HOROVOD_GPU_BROADCAST
+#if HOROVOD_GPU_BROADCAST == 'C'
+  m.def("horovod_torch_broadcast_async_torch_xpu_ByteTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_CharTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_ShortTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_IntTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_LongTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_HalfTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_FloatTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_DoubleTensor", &DoBroadcast);
+  m.def("horovod_torch_broadcast_async_torch_xpu_BFloat16Tensor", &DoBroadcast);
+#elif HOROVOD_GPU_BROADCAST
   m.def("horovod_torch_broadcast_async_torch_cuda_ByteTensor", &DoBroadcast);
   m.def("horovod_torch_broadcast_async_torch_cuda_CharTensor", &DoBroadcast);
   m.def("horovod_torch_broadcast_async_torch_cuda_ShortTensor", &DoBroadcast);
@@ -1222,7 +1359,16 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_alltoall_async_torch_HalfTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_FloatTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_DoubleTensor", &DoAlltoall);
-#if HOROVOD_GPU_ALLTOALL
+#if HOROVOD_GPU_ALLTOALL == 'C'
+  m.def("horovod_torch_alltoall_async_torch_xpu_ByteTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_CharTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_ShortTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_IntTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_LongTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_HalfTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_FloatTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_DoubleTensor", &DoAlltoall);
+#elif HOROVOD_GPU_ALLTOALL
   m.def("horovod_torch_alltoall_async_torch_cuda_ByteTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_cuda_CharTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_cuda_ShortTensor", &DoAlltoall);

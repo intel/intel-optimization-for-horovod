@@ -210,7 +210,7 @@ def get_package_version():
     return __version__ + "+" + os.environ['HOROVOD_LOCAL_VERSION'] if 'HOROVOD_LOCAL_VERSION' in os.environ else __version__
 
 
-setup(name='horovod',
+setup(name='intel_optimization_for_horovod',
       version=get_package_version(),
       packages=find_packages(),
       description='Distributed training framework for TensorFlow, Keras, PyTorch, and Apache MXNet.',

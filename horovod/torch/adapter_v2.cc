@@ -1,4 +1,5 @@
 // Copyright 2018 Uber Technologies, Inc. All Rights Reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,13 +15,24 @@
 // =============================================================================
 
 #if HAVE_GPU
+#if HAVE_CUDA
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDAException.h>
+#elif HAVE_SYCL
+#include <c10/core/impl/VirtualGuardImpl.h>
+#include <ipex.h>
+#endif
 #endif
 
 #include "adapter_v2.h"
-#include "cuda_util.h"
+#include "device_util.h"
 #include "ready_event.h"
+
+#if HAVE_SYCL
+#define KGPU ::torch::kXPU
+#elif HAVE_CUDA
+#define KGPU ::torch::kCUDA
+#endif
 
 namespace horovod {
 namespace torch {
@@ -39,6 +51,8 @@ namespace torch {
     return ::torch::kLong;
   case common::HOROVOD_FLOAT16:
     return ::torch::kHalf;
+  case common::HOROVOD_BF16:
+    return ::torch::kBFloat16;
   case common::HOROVOD_FLOAT32:
     return ::torch::kFloat;
   case common::HOROVOD_FLOAT64:
@@ -54,8 +68,9 @@ TorchPersistentBuffer::TorchPersistentBuffer(int device, int64_t size)
   if (device_ == CPU_DEVICE_ID) {
     tensor_ = ::torch::empty({size}, ::torch::device(::torch::kCPU).dtype(::torch::kByte));
   } else {
-    tensor_ = ::torch::empty({size}, ::torch::device(::torch::kCUDA).dtype(::torch::kByte));
-#if HAVE_GPU
+    tensor_ = ::torch::empty({size}, ::torch::device(KGPU).dtype(::torch::kByte));
+    // TODO(Maozhou): block Host?
+#if HAVE_GPU && !HAVE_SYCL
     // On GPU allocation is asynchronous, we need to wait for it to
     // complete.
     auto stream = c10::cuda::getCurrentCUDAStream(device_);
@@ -85,6 +100,8 @@ const DataType TorchTensor::dtype() const {
     return common::HOROVOD_INT64;
   case ::torch::kHalf:
     return common::HOROVOD_FLOAT16;
+  case ::torch::kBFloat16:
+    return common::HOROVOD_BF16;
   case ::torch::kFloat:
     return common::HOROVOD_FLOAT32;
   case ::torch::kDouble:
@@ -107,6 +124,11 @@ const void* TorchTensor::data() const { return tensor_.data_ptr(); }
 int64_t TorchTensor::size() const {
   return tensor_.element_size() * tensor_.numel();
 }
+
+#if HAVE_SYCL
+TorchOpContext::TorchOpContext(int device)
+    : device_(device), output_devices_{device} {}
+#endif
 
 TorchOpContext::TorchOpContext(int device, ::torch::Tensor principal_output)
     : device_(device), output_devices_{device}, outputs_{principal_output} {}
@@ -146,7 +168,8 @@ Status TorchOpContext::AllocateOutput(int output_index, TensorShape shape,
   with_device device_context(output_devices_.at(output_index));
   outputs_.at(output_index).resize_(shape_vector);
   *tensor = std::make_shared<TorchTensor>(outputs_.at(output_index));
-#if HAVE_GPU
+  // TODO(Maozhou): block Host?
+#if HAVE_GPU && !HAVE_SYCL
   auto device_ = output_devices_.at(output_index);
   if (device_ != CPU_DEVICE_ID) {
     if (event == nullptr) {
@@ -167,11 +190,12 @@ Status TorchOpContext::AllocateZeros(int64_t num_elements, DataType dtype,
   with_device device_context(device_);
   auto torch_data_type = GetTorchDataType(dtype);
   ::torch::DeviceType device_type =
-      device_ != CPU_DEVICE_ID ? ::torch::kCUDA : ::torch::kCPU;
+      device_ != CPU_DEVICE_ID ? KGPU : ::torch::kCPU;
   ::torch::Tensor zero_tensor = ::torch::zeros(
       num_elements, ::torch::device(device_type).dtype(torch_data_type));
   *tensor = std::make_shared<TorchTensor>(zero_tensor);
-#if HAVE_GPU
+  // TODO(Maozhou): block Host?
+#if HAVE_GPU && !HAVE_SYCL
   if (device_ != CPU_DEVICE_ID) {
     // On GPU allocation is asynchronous, we need to wait for it to
     // complete.
@@ -185,6 +209,16 @@ Status TorchOpContext::AllocateZeros(int64_t num_elements, DataType dtype,
 Framework TorchOpContext::framework() const {
   return Framework::PYTORCH;
 }
+
+#if HAVE_SYCL
+sycl::queue TorchOpContext::SYCLQueue() const {
+  ::torch::DeviceType device_type =
+      device_ != CPU_DEVICE_ID ? KGPU : ::torch::kCPU;
+  c10::impl::VirtualGuardImpl impl(device_type);
+  c10::Stream dpcpp_stream = impl.getStream(at::Device(device_type, device_));
+  return xpu::get_queue_from_stream(dpcpp_stream);
+}
+#endif
 
 void ThrowIfError(Status status) {
   switch (status.type()) {

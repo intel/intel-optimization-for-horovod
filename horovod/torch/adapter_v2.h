@@ -1,4 +1,5 @@
 // Copyright 2018 Uber Technologies, Inc. All Rights Reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -55,6 +56,9 @@ class TorchOpContext : public OpContext {
 public:
   TorchOpContext(int device, ::torch::Tensor principal_output);
   TorchOpContext(int device, const std::vector<::torch::Tensor>& outputs);
+#if HAVE_GPU && HAVE_SYCL
+  TorchOpContext(int device);
+#endif
   void AddOutput(int device, ::torch::Tensor output);
   Status AllocatePersistent(int64_t size,
                             std::shared_ptr<PersistentBuffer>* tensor) override;
@@ -66,6 +70,9 @@ public:
   Status AllocateZeros(int64_t num_elements, DataType dtype,
                        std::shared_ptr<Tensor>* tensor) override;
   Framework framework() const override;
+#ifdef HAVE_SYCL
+  virtual sycl::queue SYCLQueue() const override;
+#endif
 
 private:
   int device_ = CPU_DEVICE_ID;

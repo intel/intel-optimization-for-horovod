@@ -33,6 +33,14 @@ if (Pytorch_ROCM)
     execute_process(COMMAND ${PY_EXE} -c "from torch.utils import hipify; print(True) if hasattr(hipify, '__version__') else print(False)" OUTPUT_VARIABLE HIPIFY_HAS_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
+if (HAVE_DPCPP AND Pytorch_DPCPP)
+    add_definitions(${Ipex_DEFINES})
+    include_directories(${Ipex_INCLUDE_DIRS})
+    list(APPEND PYTORCH_LINKER_LIBS "${Ipex_LINKER_LIBS}")
+elseif(HAVE_DPCPP)
+    message(FATAL_ERROR "Horovod build with GPU support was requested but this PyTorch installation does not support DPCPP (ipex).")
+endif()
+
 include_directories(SYSTEM ${Pytorch_INCLUDE_DIRS})
 execute_process(COMMAND ${PY_EXE} -c "from distutils.sysconfig import get_python_inc; print(get_python_inc())"
                 OUTPUT_VARIABLE PYTHON_INCLUDE_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -63,8 +71,9 @@ endif()
 parse_version(${Pytorch_VERSION} VERSION_DEC)
 add_definitions(-DPYTORCH_VERSION=${VERSION_DEC} -DTORCH_API_INCLUDE_EXTENSION_H=1)
 set(Pytorch_CXX11 ${Pytorch_CXX11} PARENT_SCOPE)
+# TODO(Maozhou): do not break public hvd
 if(NOT Pytorch_VERSION VERSION_LESS "1.5.0")
-    set(CMAKE_CXX_STANDARD 14)
+    set(CMAKE_CXX_STANDARD 17)
 endif()
 
 # PyTorch SOURCES
@@ -78,7 +87,7 @@ list(APPEND PYTORCH_SOURCES "${PROJECT_SOURCE_DIR}/horovod/torch/handle_manager.
 else()
 list(APPEND PYTORCH_SOURCES "${PROJECT_SOURCE_DIR}/horovod/torch/handle_manager.cc"
                             "${PROJECT_SOURCE_DIR}/horovod/torch/ready_event.cc"
-                            "${PROJECT_SOURCE_DIR}/horovod/torch/cuda_util.cc"
+                            "${PROJECT_SOURCE_DIR}/horovod/torch/device_util.cc"
                             "${PROJECT_SOURCE_DIR}/horovod/torch/mpi_ops_v2.cc"
                             "${PROJECT_SOURCE_DIR}/horovod/torch/adapter_v2.cc")
 endif()

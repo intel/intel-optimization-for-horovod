@@ -21,6 +21,9 @@
 #if HAVE_ROCM
 #include "rocm/hip_kernels.h"
 #endif
+#if HAVE_SYCL
+#include "sycl/sycl_kernels.h"
+#endif
 
 #include <thread>
 
@@ -154,7 +157,7 @@ bool GPUAllreduce::Enabled(const ParameterManager& param_manager,
   return entries[0].device != CPU_DEVICE_ID;
 }
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::MemcpyInFusionBuffer(
     const std::vector<TensorTableEntry>& entries, const void*& fused_input_data,
     void*& buffer_data, size_t& buffer_len) {
@@ -223,7 +226,7 @@ void GPUAllreduce::MemcpyInFusionBuffer(
 }
 #endif
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::ScaleMemcpyInFusionBuffer(
     const std::vector<TensorTableEntry>& entries, const void*& fused_input_data,
     void*& buffer_data, size_t& buffer_len, double scale_factor) {
@@ -307,7 +310,7 @@ void GPUAllreduce::MemcpyEntryInFusionBuffer(
           ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::MemcpyOutFusionBuffer(
     const void* buffer_data, std::vector<TensorTableEntry>& entries) {
   if (global_state_->batch_d2d_memcopies) {
@@ -362,7 +365,7 @@ void GPUAllreduce::MemcpyOutFusionBuffer(
 }
 #endif
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::ScaleMemcpyOutFusionBuffer(
     void* buffer_data, size_t buffer_len, double scale_factor,
     std::vector<TensorTableEntry>& entries) {
@@ -459,7 +462,7 @@ bool GPUAllgather::Enabled(const ParameterManager& param_manager,
 }
 
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUAllgather::MemcpyInFusionBuffer(
     const std::vector<TensorTableEntry>& entries, const int* displcmnts,
     int element_size, void*& buffer_data) {
@@ -535,7 +538,7 @@ void GPUAllgather::MemcpyEntryInFusionBuffer(
           ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUAllgather::MemcpyOutFusionBuffer(
     const int64_t* const* entry_component_offsets,
     const int64_t* const* entry_component_sizes, const void* buffer_data,
@@ -692,7 +695,7 @@ void GPUReducescatter::MemcpyEntryOutFusionBuffer(
       gpu_context_->streams[global_state_->current_nccl_stream][e.device]);
 }
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
 void GPUReducescatter::MemcpyInFusionBuffer(
     const std::vector<TensorTableEntry>& entries,
     const std::vector<std::vector<TensorShape>>& output_shapes,

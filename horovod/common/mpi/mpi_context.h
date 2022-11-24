@@ -98,6 +98,11 @@ struct MPIContext {
   MPI_Op mpi_float16_max;
   MPI_Op mpi_float16_prod;
 
+  // TODO(Maozhou): support min/max/prod
+  // MPI custom data type for bfloat16.
+  MPI_Datatype mpi_bf16_t;
+  MPI_Op mpi_bf16_sum;
+
   // Private MPI communicator for Horovod to ensure no collisions with other
   // threads using MPI, incorporates all processes known to Horovod.
   // Communicators for process subsets will be based on global_comm.
