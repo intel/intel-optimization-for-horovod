@@ -15,6 +15,10 @@
 
 #include "sycl_kernels.h"
 
+// TODO(Fengqing):bfloat16 is only supported by dpcpp,
+// not a SYCL official solution.
+using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
+
 namespace horovod {
 namespace common {
 
@@ -138,12 +142,11 @@ void BatchedScaledD2DMemcpyInImpl(BatchedD2DParams& params, void* fusion_buffer,
                                             scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT16:
-    BatchedScaledD2DMemcpy<unsigned short, float>(
+    BatchedScaledD2DMemcpy<sycl::half, float>(
         params, fusion_buffer, num_copies, (float)scale_factor, stream, true);
     break;
-  case HOROVOD_BF16:
-    // todo: BF16 accuracy issue.
-    BatchedScaledD2DMemcpy<unsigned short, float>(
+  case HOROVOD_BFLOAT16:
+    BatchedScaledD2DMemcpy<bfloat16, float>(
         params, fusion_buffer, num_copies, (float)scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT32:
@@ -182,12 +185,11 @@ void BatchedScaledD2DMemcpyOutImpl(BatchedD2DParams& params,
                                             scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT16:
-    BatchedScaledD2DMemcpy<unsigned short, float>(
+    BatchedScaledD2DMemcpy<sycl::half, float>(
         params, fusion_buffer, num_copies, (float)scale_factor, stream, false);
     break;
-  case HOROVOD_BF16:
-    // todo: BF16 accuracy issue.
-    BatchedScaledD2DMemcpy<unsigned short, float>(
+  case HOROVOD_BFLOAT16:
+    BatchedScaledD2DMemcpy<bfloat16, float>(
         params, fusion_buffer, num_copies, (float)scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT32:

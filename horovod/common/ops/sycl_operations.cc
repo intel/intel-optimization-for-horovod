@@ -205,13 +205,15 @@ public:
                           (int64_t*)buffer_data, num_elements, scale_factor,
                           stream);
       break;
-    // FIXME(Maozhou): fix accuracy for FP16/BF16
     case HOROVOD_FLOAT16:
-      ScaleBufferSyclImpl((const unsigned short*) fused_input_data, (unsigned short*) buffer_data,
+      ScaleBufferSyclImpl((const sycl::half*) fused_input_data, (sycl::half*) buffer_data,
                           num_elements, (float) scale_factor, stream);
       break;
-    case HOROVOD_BF16:
-      ScaleBufferSyclImpl((const unsigned short*) fused_input_data, (unsigned short*) buffer_data,
+    case HOROVOD_BFLOAT16:
+      // TODO(Fengqing):bfloat16 is only supported by dpcpp,
+      // not a SYCL official solution.
+      using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
+      ScaleBufferSyclImpl((const bfloat16*) fused_input_data, (bfloat16*) buffer_data,
                           num_elements, (float) scale_factor, stream);
       break;
     case HOROVOD_FLOAT32:

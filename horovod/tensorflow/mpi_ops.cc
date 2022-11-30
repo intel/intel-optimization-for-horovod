@@ -110,7 +110,7 @@ namespace {
     return DT_INT64;
   case common::HOROVOD_FLOAT16:
     return DT_HALF;
-  case common::HOROVOD_BF16:
+  case common::HOROVOD_BFLOAT16:
     return DT_BFLOAT16;
   case common::HOROVOD_FLOAT32:
     return DT_FLOAT;
@@ -338,7 +338,7 @@ const common::DataType TFTensor::dtype() const {
   case DT_HALF:
     return common::HOROVOD_FLOAT16;
   case DT_BFLOAT16:
-    return common::HOROVOD_BF16;
+    return common::HOROVOD_BFLOAT16;
   case DT_FLOAT:
     return common::HOROVOD_FLOAT32;
   case DT_DOUBLE:

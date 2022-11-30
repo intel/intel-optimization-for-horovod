@@ -49,7 +49,7 @@ MPI_Datatype MPIContext::GetMPIDataType(const DataType dtype) const {
     return MPI_INT64_T;
   case HOROVOD_FLOAT16:
     return mpi_float16_t;
-  case HOROVOD_BF16:
+  case HOROVOD_BFLOAT16:
     return mpi_bf16_t;
   case HOROVOD_FLOAT32:
     return MPI_FLOAT;
@@ -67,7 +67,7 @@ MPI_Op MPIContext::GetMPISumOp(DataType dtype) const {
   switch (dtype) {
   case HOROVOD_FLOAT16:
     return mpi_float16_sum;
-  case HOROVOD_BF16:
+  case HOROVOD_BFLOAT16:
     return mpi_bf16_sum;
   default:
     return MPI_SUM;

@@ -34,7 +34,7 @@ ccl::datatype GetCCLDataType(const std::shared_ptr<Tensor>& tensor) {
     return ccl::datatype::int16;
   case HOROVOD_FLOAT16:
     return ccl::datatype::float16;
-  case HOROVOD_BF16:
+  case HOROVOD_BFLOAT16:
     return ccl::datatype::bfloat16;
   case HOROVOD_FLOAT32:
     return ccl::datatype::float32;

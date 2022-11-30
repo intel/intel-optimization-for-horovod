@@ -49,11 +49,11 @@ enum DataType : int8_t {
   DataType_HOROVOD_FLOAT32 = 7,
   DataType_HOROVOD_FLOAT64 = 8,
   DataType_HOROVOD_BOOL = 9,
-  DataType_HOROVOD_BF16 = 10,
+  DataType_HOROVOD_BFLOAT16 = 10,
   DataType_MIN = DataType_HOROVOD_UINT8,
   // FIXME(Maozhou): to confirm
   // DataType_MAX = DataType_HOROVOD_BOOL,
-  DataType_MAX = DataType_HOROVOD_BF16
+  DataType_MAX = DataType_HOROVOD_BFLOAT16
 };
 
 inline const DataType (&EnumValuesDataType())[11] {
@@ -68,7 +68,7 @@ inline const DataType (&EnumValuesDataType())[11] {
     DataType_HOROVOD_FLOAT32,
     DataType_HOROVOD_FLOAT64,
     DataType_HOROVOD_BOOL,
-      DataType_HOROVOD_BF16,
+    DataType_HOROVOD_BFLOAT16,
   };
   return values;
 }
@@ -85,7 +85,7 @@ inline const char * const *EnumNamesDataType() {
     "HOROVOD_FLOAT32",
     "HOROVOD_FLOAT64",
     "HOROVOD_BOOL",
-      "HOROVOD_BF16",
+    "HOROVOD_BFLOAT16",
     nullptr
   };
   return names;

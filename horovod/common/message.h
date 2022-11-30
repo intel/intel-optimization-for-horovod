@@ -38,7 +38,7 @@ enum DataType {
   HOROVOD_FLOAT32 = 7,
   HOROVOD_FLOAT64 = 8,
   HOROVOD_BOOL = 9,
-  HOROVOD_BF16 = 10,
+  HOROVOD_BFLOAT16 = 10,
 };
 
 enum ReduceOp {

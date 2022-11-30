@@ -51,7 +51,7 @@ namespace torch {
     return ::torch::kLong;
   case common::HOROVOD_FLOAT16:
     return ::torch::kHalf;
-  case common::HOROVOD_BF16:
+  case common::HOROVOD_BFLOAT16:
     return ::torch::kBFloat16;
   case common::HOROVOD_FLOAT32:
     return ::torch::kFloat;
@@ -101,7 +101,7 @@ const DataType TorchTensor::dtype() const {
   case ::torch::kHalf:
     return common::HOROVOD_FLOAT16;
   case ::torch::kBFloat16:
-    return common::HOROVOD_BF16;
+    return common::HOROVOD_BFLOAT16;
   case ::torch::kFloat:
     return common::HOROVOD_FLOAT32;
   case ::torch::kDouble:
