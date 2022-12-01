@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+## [v0.4.0] - 2022-12-23
+
+### Added
+
+- Added oneCCL GPU support for Broadcast and Allreduce operations.
+- Added GPU Bfloat16 compression based on DPCPP compiler, verified on Intel® Data Center GPU Max Series.
 
 ## [v0.26.1] - 2022-10-14
 
