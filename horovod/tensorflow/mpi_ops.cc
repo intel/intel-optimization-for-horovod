@@ -851,8 +851,6 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLGATHER
 REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_GPU),
                         HorovodAllgatherOp);
-REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_XPU),
-                        HorovodAllgatherOp);
 #endif
 
 REGISTER_OP("HorovodAllgather")
@@ -1980,11 +1978,6 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLTOALL
 REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall")
                             .Device(DEVICE_GPU)
-                            .HostMemory("splits")
-                            .HostMemory("received_splits"),
-                        HorovodAlltoallOp);
-REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall")
-                            .Device(DEVICE_XPU)
                             .HostMemory("splits")
                             .HostMemory("received_splits"),
                         HorovodAlltoallOp);
