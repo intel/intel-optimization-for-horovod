@@ -51,8 +51,6 @@ enum DataType : int8_t {
   DataType_HOROVOD_BOOL = 9,
   DataType_HOROVOD_BFLOAT16 = 10,
   DataType_MIN = DataType_HOROVOD_UINT8,
-  // FIXME(Maozhou): to confirm
-  // DataType_MAX = DataType_HOROVOD_BOOL,
   DataType_MAX = DataType_HOROVOD_BFLOAT16
 };
 
