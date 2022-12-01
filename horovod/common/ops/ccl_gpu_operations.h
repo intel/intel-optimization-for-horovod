@@ -101,7 +101,6 @@ public:
       sycl_2_ccl_event_map;
 
   // ccl helpers knobs
-  bool enable_fin_threads;
   bool enable_cache;
 
   static std::mutex GlobalMutex;

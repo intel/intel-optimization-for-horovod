@@ -166,38 +166,33 @@ void CCLGPUContext::StreamCreate(const TensorTableEntry& e,
 void CCLGPUContext::Initialize(HorovodGlobalState& state) {
   ccl::init();
 
-  enable_fin_threads = GetBoolEnvOrDefault(HOROVOD_CCL_FIN_THREADS, true);
   enable_cache = GetBoolEnvOrDefault(HOROVOD_CCL_CACHE, false);
-
   LOG(INFO) << "CCLGPUContext initialized: \n"
-            << "enable_fin_threads " << enable_fin_threads << "\n"
             << "enable_cache " << enable_cache << "\n";
 
-  if (enable_fin_threads) {
-    auto fin_thread_count_env = std::getenv(HOROVOD_CCL_FIN_THREAD_COUNT);
-    int fin_thread_count = 1;
-    if (fin_thread_count_env != nullptr &&
-        std::stol(fin_thread_count_env, nullptr, 10) > 0) {
-      fin_thread_count = std::atoi(fin_thread_count_env);
-    }
+  auto fin_thread_count_env = std::getenv(HOROVOD_CCL_FIN_THREAD_COUNT);
+  int fin_thread_count = 1;
+  if (fin_thread_count_env != nullptr &&
+      std::stol(fin_thread_count_env, nullptr, 10) > 0) {
+    fin_thread_count = std::atoi(fin_thread_count_env);
+  }
 
-    state.num_ccl_streams = fin_thread_count;
-    finalizer_thread_pool.create(state.num_ccl_streams);
-    auto fin_thread_affinity_env = std::getenv(HOROVOD_CCL_FIN_THREAD_AFFINITY);
-    if (fin_thread_affinity_env) {
-      LOG(INFO) << "fin_thread_affinity " << fin_thread_affinity_env;
-    }
+  state.num_ccl_streams = fin_thread_count;
+  finalizer_thread_pool.create(state.num_ccl_streams);
+  auto fin_thread_affinity_env = std::getenv(HOROVOD_CCL_FIN_THREAD_AFFINITY);
+  if (fin_thread_affinity_env) {
+    LOG(INFO) << "fin_thread_affinity " << fin_thread_affinity_env;
+  }
 
-    int local_size = state.global_controller->GetLocalSize();
-    int local_rank = state.global_controller->GetLocalRank();
+  int local_size = state.global_controller->GetLocalSize();
+  int local_rank = state.global_controller->GetLocalRank();
 
-    for (int i = 0; i < fin_thread_count; i++) {
-      finalizer_thread_pool.execute([&]() mutable {
-        parse_and_set_affinity(fin_thread_affinity_env,
-                               fin_thread_count * local_size,
-                               fin_thread_count * local_rank + i);
-      });
-    }
+  for (int i = 0; i < fin_thread_count; i++) {
+    finalizer_thread_pool.execute([&]() mutable {
+      parse_and_set_affinity(fin_thread_affinity_env,
+                             fin_thread_count * local_size,
+                             fin_thread_count * local_rank + i);
+    });
   }
   ccl_comms.resize(state.num_ccl_streams);
   streams.resize(state.num_ccl_streams);
