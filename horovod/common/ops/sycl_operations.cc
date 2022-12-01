@@ -206,15 +206,17 @@ public:
                           stream);
       break;
     case HOROVOD_FLOAT16:
-      ScaleBufferSyclImpl((const sycl::half*) fused_input_data, (sycl::half*) buffer_data,
-                          num_elements, (float) scale_factor, stream);
+      ScaleBufferSyclImpl((const sycl::half*)fused_input_data,
+                          (sycl::half*)buffer_data, num_elements,
+                          (float)scale_factor, stream);
       break;
     case HOROVOD_BFLOAT16:
       // TODO(Fengqing):bfloat16 is only supported by dpcpp,
       // not a SYCL official solution.
       using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
-      ScaleBufferSyclImpl((const bfloat16*) fused_input_data, (bfloat16*) buffer_data,
-                          num_elements, (float) scale_factor, stream);
+      ScaleBufferSyclImpl((const bfloat16*)fused_input_data,
+                          (bfloat16*)buffer_data, num_elements,
+                          (float)scale_factor, stream);
       break;
     case HOROVOD_FLOAT32:
       ScaleBufferSyclImpl((const float*)fused_input_data, (float*)buffer_data,

@@ -146,8 +146,8 @@ void BatchedScaledD2DMemcpyInImpl(BatchedD2DParams& params, void* fusion_buffer,
         params, fusion_buffer, num_copies, (float)scale_factor, stream, true);
     break;
   case HOROVOD_BFLOAT16:
-    BatchedScaledD2DMemcpy<bfloat16, float>(
-        params, fusion_buffer, num_copies, (float)scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<bfloat16, float>(params, fusion_buffer, num_copies,
+                                            (float)scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT32:
     BatchedScaledD2DMemcpy<float, float>(params, fusion_buffer, num_copies,
@@ -189,8 +189,8 @@ void BatchedScaledD2DMemcpyOutImpl(BatchedD2DParams& params,
         params, fusion_buffer, num_copies, (float)scale_factor, stream, false);
     break;
   case HOROVOD_BFLOAT16:
-    BatchedScaledD2DMemcpy<bfloat16, float>(
-        params, fusion_buffer, num_copies, (float)scale_factor, stream, false);
+    BatchedScaledD2DMemcpy<bfloat16, float>(params, fusion_buffer, num_copies,
+                                            (float)scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT32:
     BatchedScaledD2DMemcpy<float, float>(params, fusion_buffer, num_copies,

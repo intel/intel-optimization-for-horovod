@@ -1,7 +1,7 @@
 // Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 // Modifications copyright (C) 2019 Uber Technologies, Inc.
 // Modifications copyright (C) 2019, NVIDIA CORPORATION. All rights reserved.
-// Modifications copyright (C) 2022 Intel Corporation.
+// Modifications copyright (C) 2019-2022 Intel Corporation.
 // Modifications copyright Microsoft
 //
 // Licensed under the Apache License, Version 2.0 (the "License");

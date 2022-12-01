@@ -2,6 +2,7 @@
 // Modifications copyright (C) 2019 Uber Technologies, Inc.
 // Modifications copyright Microsoft
 // Modifications copyright (C) 2020, NVIDIA CORPORATION. All rights reserved.
+// Modifications copyright (C) 2022 Intel Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
