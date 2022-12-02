@@ -21,11 +21,12 @@
 #include <c10/cuda/CUDAException.h>
 #include <c10/cuda/CUDAStream.h>
 #elif HAVE_SYCL
-#if !defined(__INTEL_LLVM_COMPILER) ||                                         \
-    (defined(__INTEL_LLVM_COMPILER) && __INTEL_LLVM_COMPILER < 20230000)
+#if __has_include(<sycl/sycl.hpp>)
+#include <sycl/sycl.hpp>
+#elif __has_include(<CL/sycl.hpp>)
 #include <CL/sycl.hpp>
 #else
-#include <sycl.hpp>
+#error "Unsupported compiler"
 #endif
 #endif // HAVE_CUDA
 #endif // HAVE_GPU

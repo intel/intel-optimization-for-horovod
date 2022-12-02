@@ -21,11 +21,12 @@
 #if HAVE_CUDA
 #include "cuda_runtime.h"
 #elif HAVE_SYCL
-#if !defined(__INTEL_LLVM_COMPILER) ||                                         \
-    (defined(__INTEL_LLVM_COMPILER) && __INTEL_LLVM_COMPILER < 20230000)
+#if __has_include(<sycl/sycl.hpp>)
+#include <sycl/sycl.hpp>
+#elif __has_include(<CL/sycl.hpp>)
 #include <CL/sycl.hpp>
 #else
-#include <sycl.hpp>
+#error "Unsupported compiler"
 #endif // __INTEL_LLVM_COMPILER
 #include "adapter_v2.h"
 #endif // HAVE_CUDA
