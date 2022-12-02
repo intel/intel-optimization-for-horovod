@@ -162,7 +162,7 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
   std::vector<std::shared_ptr<AllreduceOp>> adasum_ops;
   std::vector<std::shared_ptr<AlltoallOp>> alltoall_ops;
 
-#if HAVE_MPI && HAVE_GPU
+#if HAVE_MPI && HAVE_GPU && !HAVE_SYCL
   if (global_mpi_context.IsEnabled()) {
 #if HOROVOD_GPU_ALLREDUCE == 'M'
     allreduce_ops.push_back(std::shared_ptr<AllreduceOp>(
@@ -426,6 +426,14 @@ ProcessSet& GetProcessSetOrAddUnitialized(std::vector<int> ranks, int& id) {
 bool RunLoopOnce(HorovodGlobalState& state);
 
 void BackgroundThreadLoop(HorovodGlobalState& state) {
+#if HAVE_CCL
+#if HAVE_GPU
+  ccl_gpu_context.Initialize(state);
+#else
+  ccl_context.Initialize();
+#endif
+#endif // HAVE_CCL
+
 #if HAVE_MPI
   // Initialize mpi context
 #if HAVE_DDL
@@ -472,7 +480,7 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   parse_and_set_affinity(std::getenv(HOROVOD_THREAD_AFFINITY), local_size,
                          local_rank);
 
-#if HAVE_GPU
+#if HAVE_GPU && !HAVE_SYCL
   // Set number of GPU streams to use
   auto horovod_num_nccl_streams = std::getenv(HOROVOD_NUM_NCCL_STREAMS);
   if (horovod_num_nccl_streams != nullptr &&
@@ -701,14 +709,6 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   LOG(INFO, horovod_global.global_controller->GetRank())
       << "Horovod initialized";
 
-#if HAVE_CCL
-#if HAVE_GPU
-  ccl_gpu_context.Initialize(state);
-#else
-  ccl_context.Initialize(state);
-#endif
-#endif
-
   // Iterate until shutdown.
   try {
     while (RunLoopOnce(state))
@@ -757,10 +757,7 @@ shutdown:
   global_gloo_context.Finalize();
 #endif
 
-#if HAVE_MPI
-  global_mpi_context.Finalize(mpi_ctx_manager);
-#endif
-
+  // finalize CCL before MPI
 #if HAVE_CCL
 #if HAVE_GPU
   ccl_gpu_context.Finalize(state);
@@ -769,6 +766,10 @@ shutdown:
     ccl_context.Finalize();
   }
 #endif
+#endif
+
+#if HAVE_MPI
+  global_mpi_context.Finalize(mpi_ctx_manager);
 #endif
 }
 

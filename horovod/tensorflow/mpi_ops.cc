@@ -233,7 +233,7 @@ public:
                 std::shared_ptr<common::Tensor>* tensor) override;
   virtual common::Framework framework() const override;
   OpKernelContext* GetKernelContext() const;
-#ifdef HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
   // return frameworks sycl-queue for given device
   virtual sycl::queue SYCLQueue() const override;
 #endif
@@ -364,7 +364,7 @@ int64_t TFTensor::size() const { return (int64_t)tensor_.tensor_data().size(); }
 
 const ::tensorflow::Tensor*  TFTensor::tensor() const { return &tensor_; }
 
-#if HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
 sycl::queue TFOpContext::SYCLQueue() const {
   if (GetDeviceID(context_) != CPU_DEVICE_ID) {
     return *(TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(context_),
@@ -452,7 +452,7 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
   }
 
   Status status = context_->allocate_temp(tf_data_type, ::tensorflow::TensorShape({num_elements}), zero_tensor.get(), tf_attribute);
-#if HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
   sycl::event ev;
 #endif
 

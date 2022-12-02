@@ -360,7 +360,7 @@ public:
                                 std::shared_ptr<Tensor>* tensor) = 0;
   virtual Framework framework() const = 0;
   virtual ~OpContext() = default;
-#ifdef HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
   // TODO(Maozhou): move to GPU operations?
   // return frameworks sycl-queue for given device
   virtual sycl::queue SYCLQueue() const = 0;

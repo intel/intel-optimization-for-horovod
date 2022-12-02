@@ -125,7 +125,7 @@ int64_t TorchTensor::size() const {
   return tensor_.element_size() * tensor_.numel();
 }
 
-#if HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
 TorchOpContext::TorchOpContext(int device)
     : device_(device), output_devices_{device} {}
 #endif
@@ -210,7 +210,7 @@ Framework TorchOpContext::framework() const {
   return Framework::PYTORCH;
 }
 
-#if HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
 sycl::queue TorchOpContext::SYCLQueue() const {
   ::torch::DeviceType device_type =
       device_ != CPU_DEVICE_ID ? KGPU : ::torch::kCPU;

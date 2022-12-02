@@ -70,7 +70,7 @@ public:
   Status AllocateZeros(int64_t num_elements, DataType dtype,
                        std::shared_ptr<Tensor>* tensor) override;
   Framework framework() const override;
-#ifdef HAVE_SYCL
+#if HAVE_GPU && HAVE_SYCL
   virtual sycl::queue SYCLQueue() const override;
 #endif
 
