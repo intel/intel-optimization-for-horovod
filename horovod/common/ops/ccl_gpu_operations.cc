@@ -187,12 +187,14 @@ void CCLGPUContext::Initialize(HorovodGlobalState& state) {
   int local_size = state.global_controller->GetLocalSize();
   int local_rank = state.global_controller->GetLocalRank();
 
-  for (int i = 0; i < fin_thread_count; i++) {
-    finalizer_thread_pool.execute([&]() mutable {
-      parse_and_set_affinity(fin_thread_affinity_env,
-                             fin_thread_count * local_size,
-                             fin_thread_count * local_rank + i);
-    });
+  if (fin_thread_affinity_env) {
+    for (int i = 0; i < fin_thread_count; i++) {
+      finalizer_thread_pool.execute([&]() mutable {
+        parse_and_set_affinity(fin_thread_affinity_env,
+                              fin_thread_count * local_size,
+                              fin_thread_count * local_rank + i);
+      });
+    }
   }
   ccl_comms.resize(state.num_ccl_streams);
   streams.resize(state.num_ccl_streams);
