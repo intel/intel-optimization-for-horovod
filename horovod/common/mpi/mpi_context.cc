@@ -305,7 +305,7 @@ void MPIContext::FinalizeWithoutEnv() {
   if (mpi_float16_prod != MPI_OP_NULL) {
     MPI_Op_free(&mpi_float16_prod);
   }
-  // TODO(Maozhou): support min/max/prod
+  // TODO(IOH): support min/max/prod
   if (mpi_bf16_sum != MPI_OP_NULL) {
     MPI_Op_free(&mpi_bf16_sum);
   }

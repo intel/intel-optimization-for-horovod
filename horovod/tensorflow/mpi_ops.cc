@@ -24,7 +24,6 @@
 #include <unordered_map>
 
 #define EIGEN_USE_THREADS
-// TODO(Maozhou): SYCL?
 #if HAVE_CUDA || HAVE_ROCM
 #define EIGEN_USE_GPU
 #endif  // HAVE_CUDA || HAVE_ROCM
@@ -174,7 +173,7 @@ class TFOpContext;
 class TFReadyEvent : public common::ReadyEvent {
 public:
   TFReadyEvent(OpKernelContext* context);
-  // TODO(Maozhou): what for?
+  // TODO(Maozhou): to confirm
 #if HAVE_SYCL
   TFReadyEvent(const TFReadyEvent& other) = delete;
   TFReadyEvent& operator=(const TFReadyEvent& other) = delete;

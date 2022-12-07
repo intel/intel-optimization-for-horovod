@@ -109,7 +109,6 @@ void CCLGPUContext::WaitForEvents(
   while (!event_queue.empty()) {
     std::string name;
     Event event;
-    // TODO(Maozhou): need mutex?
     std::tie(name, event) = event_queue.front();
     event_queue.pop();
     if (name != "") {
@@ -191,8 +190,8 @@ void CCLGPUContext::Initialize(HorovodGlobalState& state) {
     for (int i = 0; i < fin_thread_count; i++) {
       finalizer_thread_pool.execute([&]() mutable {
         parse_and_set_affinity(fin_thread_affinity_env,
-                              fin_thread_count * local_size,
-                              fin_thread_count * local_rank + i);
+                               fin_thread_count * local_size,
+                               fin_thread_count * local_rank + i);
       });
     }
   }
@@ -211,7 +210,6 @@ CCLGPUOpContext::~CCLGPUOpContext() {
   ccl_contexts.clear();
 }
 
-// TODO(Maozhou): use the ones from GPUContext
 void CCLGPUOpContext::InitGPU(const std::vector<TensorTableEntry>& entries) {
   auto& first_entry = entries[0];
 
@@ -759,7 +757,7 @@ bool CCLGPUAllgather::Enabled(const ParameterManager& param_manager,
 
 Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
                                 const Response& response) {
-  // TODO(Maozhou): TBD?
+  // TODO(IOH): TBD
   return Status::OK();
 }
 
@@ -810,7 +808,7 @@ bool CCLGPUAlltoall::Enabled(const ParameterManager& param_manager,
 
 Status CCLGPUAlltoall::Execute(std::vector<TensorTableEntry>& entries,
                                const Response& response) {
-  // TODO(Maozhou): TBD?
+  // TODO(IOH): TBD
   return Status::OK();
 }
 

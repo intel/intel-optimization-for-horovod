@@ -10,7 +10,7 @@
 #  Pytorch_CUDA
 #  Pytorch_ROCM
 #  Pytorch_CXX11
-# TODO(Maozhou): remove IPEX depends
+# TODO(IOH): remove IPEX depends
 #  Pytorch_DPCPP
 #  Ipex_INCLUDE_DIRS
 #  Ipex_LINKER_LIBS

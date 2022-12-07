@@ -56,7 +56,7 @@ public:
 
   void ErrorCheck(std::string op_name, gpuError_t sycl_result) {
     // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    throw std::runtime_error("Not implemented yet!");
   }
 
   void RecordEvent(std::queue<std::pair<std::string, Event>>& event_queue,
@@ -82,13 +82,11 @@ public:
     while (!event_queue.empty()) {
       std::string name;
       Event event;
-      // TODO(Maozhou): need mutex?
       std::tie(name, event) = event_queue.front();
       event_queue.pop();
       if (name != "") {
         timeline.ActivityStartAll(entries, name);
       }
-      // TODO(Maozhou): ccl::event->wait()?
       event.event->wait();
       if (name != "") {
         timeline.ActivityEndAll(entries);
@@ -102,8 +100,8 @@ public:
                        const std::vector<TensorTableEntry>& entries,
                        Timeline& timeline,
                        const std::function<void()>& error_check_callback) {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    // TODO(IOH): TBD
+    throw std::runtime_error("Not implemented yet!");
   }
 
   void ClearEvents(std::queue<std::pair<std::string, Event>>& event_queue,
@@ -149,20 +147,17 @@ public:
   }
 
   void StreamCreate(gpuStream_t* stream) {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    throw std::logic_error("Not supported by SYCL.");
   }
 
   void StreamSynchronize(gpuStream_t& stream) { stream->wait(); }
 
   int GetDevice() {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    throw std::logic_error("Not supported by SYCL.");
   }
 
   void SetDevice(int device) {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    throw std::logic_error("Not supported by SYCL.");
   }
 
   void MemcpyAsyncD2D(void* dst, const void* src, size_t count,
@@ -172,14 +167,14 @@ public:
 
   void MemcpyAsyncH2D(void* dst, const void* src, size_t count,
                       gpuStream_t stream) {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    // TODO(IOH): TBD
+    throw std::runtime_error("Not implemented yet!");
   }
 
   void MemcpyAsyncD2H(void* dst, const void* src, size_t count,
                       gpuStream_t stream) {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("not implemented!");
+    // TODO(IOH): TBD
+    throw std::runtime_error("Not implemented yet!");
   }
 
   void ScaleBufferImpl(const void* fused_input_data, void* buffer_data,

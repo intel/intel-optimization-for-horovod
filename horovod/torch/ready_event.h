@@ -27,7 +27,7 @@
 #include <CL/sycl.hpp>
 #else
 #error "Unsupported compiler"
-#endif // __INTEL_LLVM_COMPILER
+#endif
 #include "adapter_v2.h"
 #endif // HAVE_CUDA
 #endif

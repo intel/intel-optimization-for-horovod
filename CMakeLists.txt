@@ -56,7 +56,7 @@ list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/common.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/fusion_buffer_manager.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/group_table.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/half.cc"
-        # TODO(Maozhou): if else?
+        # TODO(Maozhou): if AVX512?
         "${PROJECT_SOURCE_DIR}/horovod/common/bf16.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/logging.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/message.cc"
@@ -86,7 +86,7 @@ endif()
 
 # Add default project CXX flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -fPIC -Wall -ftree-vectorize")
-# TODO(Maozhou): why extra options?
+# TODO(IOH): clean extra options
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wformat -Wformat-security -Werror=format-security -fstack-protector -D_FORTIFY_SOURCE=1 -fstack-clash-protection")
 
 # RelWithDebInfo uses -O2, prefer performance over debug info in RelWithDebInfo build type
@@ -131,7 +131,7 @@ set_gpu_op(HOROVOD_GPU_ALLREDUCE "MPI;NCCL;CCL;DDL")
 set_gpu_op(HOROVOD_GPU_ALLGATHER "MPI;NCCL;CCL")
 set_gpu_op(HOROVOD_GPU_BROADCAST "MPI;NCCL;CCL")
 set_gpu_op(HOROVOD_GPU_ALLTOALL "MPI;NCCL;CCL")
-# TODO(Maozhou): support REDUCESCATTER
+# TODO(IOH): support REDUCESCATTER
 set_gpu_op(HOROVOD_GPU_REDUCESCATTER "MPI;NCCL")
 
 foreach(VAR in ITEMS HOROVOD_GPU_ALLREDUCE HOROVOD_GPU_ALLGATHER HOROVOD_GPU_BROADCAST HOROVOD_GPU_ALLTOALL HOROVOD_GPU_REDUCESCATTER)
@@ -249,7 +249,7 @@ if(DEFINED HOROVOD_GPU_ALLREDUCE OR DEFINED HOROVOD_GPU_ALLGATHER OR DEFINED HOR
             set(USE_GPU_CCL TRUE)
             list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl_operations.cc"
                                 "${PROJECT_SOURCE_DIR}/horovod/common/ops/gpu_operations.cc")
-            # TODO(Maozhou): move SYCL common files from DPCPP path
+            # TODO(IOH): move SYCL common files from DPCPP path
             if (HAVE_SYCL)
                 list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl/sycl_kernels.cc")
             endif()

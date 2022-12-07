@@ -94,7 +94,6 @@ public:
       std::unordered_map<std::tuple<int32_t, std::vector<int32_t>>, ccl4hvd>>
       ccl_comms;
   std::vector<std::unordered_map<int, gpuStream_t>> streams;
-  // TODO(Maozhou): sycl_events
   std::unordered_map<sycl::queue, std::queue<Event>> sycl_events;
   // TODO(Maozhou): remove it when CCL_SYCL_OUTPUT_EVENT=1 is ready
   std::unordered_map<sycl::event, std::shared_ptr<ccl::event>>
