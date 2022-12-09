@@ -209,17 +209,29 @@ if not os.environ.get('HOROVOD_WITHOUT_PYTORCH'):
 def get_package_version():
     return __version__ + "+" + os.environ['HOROVOD_LOCAL_VERSION'] if 'HOROVOD_LOCAL_VERSION' in os.environ else __version__
 
+# copy third-party-programs file into pkg dir for temp building
+tpp_src_path = os.path.join(os.getcwd(), "third-party-programs")
+tpp_trg_path = os.path.join(os.getcwd(), "horovod/third-party-programs")
+if os.path.exists(tpp_src_path):
+    os.system("cp -rf {} {}".format(tpp_src_path, tpp_trg_path))
 
 setup(name='intel_optimization_for_horovod',
       version=get_package_version(),
       packages=find_packages(),
-      description='Distributed training framework for TensorFlow, Keras, PyTorch, and Apache MXNet.',
-      author='The Horovod Authors',
+      package_data={"horovod":["third-party-programs/*"]},
+      description='Intel® Optimization for Horovod* is the distributed training framework for TensorFlow* and PyTorch*.',
+      # pylint: enable=line-too-long
+      author='Intel Corporation',
       license='Apache 2.0',
       long_description=textwrap.dedent('''\
-          Horovod is a distributed training framework for TensorFlow, Keras, PyTorch, and Apache MXNet.
-          The goal of Horovod is to make distributed Deep Learning fast and easy to use.'''),
-      url='https://github.com/horovod/horovod',
+          Intel® Optimization for Horovod* is the distributed training framework for TensorFlow* and PyTorch*.
+          The goal of Intel® Optimization for Horovod* is to make distributed Deep Learning fast and easy to use on Intel XPU(GPU, CPU, etc) devices.'''),
+      # pylint: disable=line-too-long
+      url='https://github.com/intel/intel-optimization-for-horovod',
+      download_url='https://github.com/intel/intel-optimization-for-horovod/tags',
+      project_urls={
+          "Bug Tracker": "https://github.com/intel/intel-optimization-for-horovod/issues",
+      },
       keywords=['deep learning', 'tensorflow', 'keras', 'pytorch', 'mxnet', 'spark', 'AI'],
       classifiers=[
           'License :: OSI Approved :: Apache Software License',
@@ -257,3 +269,6 @@ setup(name='intel_optimization_for_horovod',
               'horovodrun = horovod.runner.launch:run_commandline'
           ]
       })
+
+# remove third-party-programs file
+os.system("rm -rf {}".format(tpp_trg_path))

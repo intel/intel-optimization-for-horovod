@@ -1,7 +1,12 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Report a Vulnerability
 
-Please report security vulnerabilities to horovod-security@lists.lfaidata.foundation.
+Report security issues or vulnerabilities to the [Intel Security Center].
 
-Anyone can post to this mailing list, however, only active maintainers of the Horovod project will be able to read to the message.
+For more information on how Intel works to resolve security issues, see
+[Vulnerability Handling Guidelines].
+
+[Intel Security Center]:https://www.intel.com/security
+
+[Vulnerability Handling Guidelines]:https://www.intel.com/content/www/us/en/security-center/vulnerability-handling-guidelines.html
