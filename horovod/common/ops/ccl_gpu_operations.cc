@@ -400,13 +400,28 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
 
   WaitForData(entries);
 
+  double prescale_factor = response.prescale_factor();
+  double postscale_factor = response.postscale_factor();
+
+  // TODO (IOH): support other ReduceOP
+  if (response.reduce_op() == ReduceOp::AVERAGE) {
+    auto process_set_id = first_entry.process_set_id;
+    auto& process_set = global_state_->process_set_table.Get(process_set_id);
+    // Averaging happens via postscale_factor
+    postscale_factor /= process_set.controller->GetSize();
+  }
+
+  LOG(DEBUG) << "CCLGPUAllreduce::Execute"
+            << " final prescale_factor: " << prescale_factor
+            << " final postscale_factor: " << postscale_factor;
+
   const void* fused_input_data;
   void* buffer_data;
   size_t buffer_len;
 
   if (entries.size() > 1) {
     ScaleMemcpyInFusionBuffer(entries, fused_input_data, buffer_data,
-                              buffer_len, response.prescale_factor());
+                              buffer_len, prescale_factor);
     if (global_state_->timeline.Initialized()) {
       ccl_context_->RecordEvent(ccl_op_context_.event_queue,
                                 MEMCPY_IN_FUSION_BUFFER,
@@ -418,9 +433,9 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
     buffer_len = (size_t)first_entry.output->size();
     int64_t num_elements =
         buffer_len / DataType_Size(first_entry.tensor->dtype());
-    if (response.prescale_factor() != 1.0) {
+    if (prescale_factor != 1.0) {
       // Execute prescaling op
-      ScaleBuffer(response.prescale_factor(), entries, fused_input_data,
+      ScaleBuffer(prescale_factor, entries, fused_input_data,
                   buffer_data, num_elements);
       fused_input_data = buffer_data; // for unfused, scale is done out of place
     }
@@ -432,11 +447,11 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
     std::string match_id = "dt_" + DataType_Name(first_entry.tensor->dtype()) +
                            "_len_" + std::to_string(buffer_len);
 
-    if (response.prescale_factor() != 1.0) {
-      match_id += "_prescale_" + std::to_string(response.prescale_factor());
+    if (prescale_factor != 1.0) {
+      match_id += "_prescale_" + std::to_string(prescale_factor);
     }
-    if (response.postscale_factor() != 1.0) {
-      match_id += "_postscale_" + std::to_string(response.postscale_factor());
+    if (postscale_factor != 1.0) {
+      match_id += "_postscale_" + std::to_string(postscale_factor);
     }
     for (size_t idx = 0; idx < entries.size(); idx++) {
       match_id += "_" + entries[idx].tensor_name;
@@ -474,16 +489,16 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   // Copy memory out of the fusion buffer.
   if (entries.size() > 1) {
     ScaleMemcpyOutFusionBuffer(buffer_data, buffer_len,
-                               response.postscale_factor(), entries);
+                               postscale_factor, entries);
     if (global_state_->timeline.Initialized()) {
       ccl_context_->RecordEvent(ccl_op_context_.event_queue,
                                 MEMCPY_OUT_FUSION_BUFFER,
                                 ccl_op_context_.stream);
     }
   } else {
-    if (response.postscale_factor() != 1.0) {
+    if (postscale_factor != 1.0) {
       // Execute postscaling op
-      ScaleBuffer(response.postscale_factor(), entries, buffer_data,
+      ScaleBuffer(postscale_factor, entries, buffer_data,
                   buffer_data, num_elements);
     }
   }
