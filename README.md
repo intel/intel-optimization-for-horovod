@@ -2,56 +2,38 @@ Intel® Optimization for Horovod* is the distributed training framework for Tens
 
 ## Install
 
+### Hardware Requirements
+ - Intel® Data Center GPU Max Series, Driver Version: [540](https://dgpu-docs.intel.com/releases/stable_540_20221205.html)
+
 
 ### Software Requirement
 
-|Package|GPU|Installation|
+|Software|Installation requirement|
+|-|-|
+|Intel® oneAPI Base Toolkit|[Install Intel® oneAPI Base Toolkit](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.1/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)|
+|TensorFlow|[Install tensorflow 2.11.0](https://www.tensorflow.org/install)|
+|Intel® Extension for TensorFlow*|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow/tree/r1.1#install) |
+|Pytorch|[Install Pytorch 1.13.0](https://pytorch.org/get-started/locally/#linux-installation)|
+|Intel® Extension for Pytorch*|[Install Intel® Extension for Pytorch*](https://github.com/intel/intel-extension-for-pytorch#installation)|
+|System|SUSE Linux Enterprise Server(SLES) 15 SP3/SP4, RedHat 8.6 (64-bit)|
+|Python|3.7-3.10|
+|Pip|19.0 or later (requires manylinux2014 support)|
+
+### Install GPU Drivers
+
+|OS|Intel GPU|Install Intel GPU Driver|
 |-|-|-|
-|Intel® oneAPI Base Toolkit|Y|[Install Intel® oneAPI Base Toolkit](#install-oneapi-base-toolkit-packages)|
-|TensorFlow|Y|[Install tensorflow 2.11.0](https://www.tensorflow.org/install)|
-|Intel® Extension for TensorFlow*|Y|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow#install) |
-|Pytorch|Y|[Install Pytorch 1.13.0](https://pytorch.org/get-started/locally/#linux-installation)|
-|Intel® Extension for Pytorch*|Y|[Install Intel® Extension for Pytorch*](https://github.com/intel/intel-extension-for-pytorch#installation)|
+|SLES 15 SP3/SP4, RedHat 8.6|Intel® Data Center GPU Max Series|  Refer to the [Installation Guides](https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series) for latest driver installation. If install the verified Intel® Data Center GPU Max Series/Intel® Data Center GPU Flex Series [540](https://dgpu-docs.intel.com/releases/stable_540_20221205.html), please append the specific version after components.|
+
 
 ### Installation Channel:
 Intel® Optimization for Horovod* can be installed through the following channels:
 
 |PyPI|Source|
 |-|-|
-|[Install from pip](https://test.pypi.org/project/intel-optimization-for-horovod/#description) | [Build from source](xpu_docs/how_to_build.md)|
+|[Install from pip](https://pypi.org/project/intel-optimization-for-horovod) | [Build from source](xpu_docs/how_to_build.md)|
 
 
-### Install oneAPI Base Toolkit Packages
-
-Need to install components of Intel® oneAPI Base Toolkit:
-- Intel® oneAPI DPC++ Compiler
-- Intel® oneAPI Threading Building Blocks (oneTBB)
-- Intel® oneAPI Math Kernel Library (oneMKL)
-- Intel® oneAPI Collective Communications Library (oneCCL)
-- Intel® oneAPI MPI Library
-
-Download and install the verified DPC++ compiler and oneMKL in Ubuntu 22.04.
-
-```bash
-# (todo: replace latest oneapi basekit link and package name)
-$ wget https://registrationcenter-download.intel.com/akdlm/irc_nas/18852/l_BaseKit_p_2023.0.0.25537_offline.sh
-# 6 components are necessary: DPC++/C++ Compiler, DPC++ Libiary, Threading Building Blocks, oneMKL, oneCCL and Intel MPI
-$ sudo sh ./l_BaseKit_p_2023.0.0.25537_offline.sh
-```
-
-For any more details, please follow the procedure in https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html.
-
-
-### Setup environment variables
-```bash
-source /opt/intel/oneapi/setvars.sh
-```
-
-A user may install more components than Intel® Optimization for Horovod* needs, and if required, `setvars.sh` can be customized to point to a specific directory by using a [configuration file](https://www.intel.com/content/www/us/en/develop/documentation/oneapi-programming-guide/top/oneapi-development-environment-setup/use-the-setvars-script-with-linux-or-macos/use-a-config-file-for-setvars-sh-on-linux-or-macos.html):
-
-```bash
-source /opt/intel/oneapi/setvars.sh --config="full/path/to/your/config.txt"
-```
 
 ### Install for GPU
 Installing Intel® Optimization for Horovod* with different frameworks is feasiable. You could choose either Intel® Extension for TensorFlow* or Intel® Extension for Pytorch* as dependency.
@@ -59,15 +41,14 @@ Installing Intel® Optimization for Horovod* with different frameworks is feasia
     ```bash
     pip install tensorflow==2.11.0
     pip install --upgrade intel-extension-for-tensorflow[gpu]
-    pip install -i https://test.pypi.org/simple/ intel-optimization-for-horovod
+    pip install intel-optimization-for-horovod
     ```
 
  2. Installing Intel® Extension for Pytorch* and Intel® Optimization for Horovod* with command:
     ```bash
-    #(todo: replace new ipex version)
-    python -m pip install torch==1.10.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
-    python -m pip install intel_extension_for_pytorch==1.10.200+gpu -f https://developer.intel.com/ipex-whl-stable-xpu
-    pip install -i https://test.pypi.org/simple/ intel-optimization-for-horovod
+    python -m pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
+    python -m pip install intel_extension_for_pytorch==1.13.10+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
+    pip install intel-optimization-for-horovod
     ```
 
 

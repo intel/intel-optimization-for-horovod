@@ -1,8 +1,11 @@
 # Build from Source Code
 
-This guide shows how to build an Intel® Optimization for Horovod* PyPI package from source and install it in Ubuntu 22.04 (64-bit).
+This guide shows how to build an Intel® Optimization for Horovod* PyPI package from source and install it.
 
 ## Prepare
+
+### Install GPU Driver
+An Intel GPU driver is needed to build with GPU support. Refer to [Install Intel GPU Driver](../README.md#install-gpu-drivers)
 
 
 ### Install Intel® Extension for Tensorflow*
@@ -14,14 +17,13 @@ $ pip install --upgrade intel-extension-for-tensorflow[gpu]
 
 ### Intel® Extension for PyTorch*
 ```bash
-#(todo: fix ipex version)
-$ python -m pip install torch==1.10.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
-$ python -m pip install intel_extension_for_pytorch==1.10.200+gpu -f https://developer.intel.com/ipex-whl-stable-xpu
+$ python -m pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
+$ python -m pip install intel_extension_for_pytorch==1.13.10+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
 ```
 
 ### Install oneAPI Base Toolkit
 
-Refer to [Install oneAPI Base Toolkit Packages](https://github.com/intel-innersource/frameworks.ai.infrastructure.intel-extension-for-tensorflow.intel-extension-for-tensorflow/blob/master/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)
+Refer to [Install oneAPI Base Toolkit Packages](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.1/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)
 
 ### Install CMake and pybind11
 
@@ -33,7 +35,7 @@ pip install pybind11 # Only for Pytorch
 
 ### Download the Intel® Optimization for Horovod* source code
 ```bash
-$ git clone (placeholder) intel-optimization-for-horovod
+$ git clone https://github.com/intel/intel-optimization-for-horovod
 $ cd intel-optimization-for-horovod
 ```
 
