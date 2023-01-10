@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-## [v0.4.0] - 2022-12-23
+## [v0.4.0] - 2023-01-06
 
 ### Added
 
