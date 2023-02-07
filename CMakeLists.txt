@@ -56,8 +56,6 @@ list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/common.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/fusion_buffer_manager.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/group_table.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/half.cc"
-        # TODO(Maozhou): if AVX512?
-        "${PROJECT_SOURCE_DIR}/horovod/common/bf16.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/logging.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/message.cc"
         "${PROJECT_SOURCE_DIR}/horovod/common/operations.cc"
@@ -95,7 +93,7 @@ string(REPLACE "-O2" "-O3" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_REL
 string(REPLACE "-O2" "-O3" CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO}")
 
 # Add architecture specific optimization flags
-set(ARCH_FLAGS "-mf16c" "-mavx" "-mfma" "-mavx512f")
+set(ARCH_FLAGS "-mf16c" "-mavx" "-mfma")
 set_build_arch_flags("${ARCH_FLAGS}")
 # Specify Horovod exports
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
