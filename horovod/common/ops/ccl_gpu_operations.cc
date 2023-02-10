@@ -400,15 +400,26 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
 
   WaitForData(entries);
 
+  auto ccl_reduction_op = ccl::reduction::sum;
   double prescale_factor = response.prescale_factor();
   double postscale_factor = response.postscale_factor();
 
-  // TODO (IOH): support other ReduceOP
   if (response.reduce_op() == ReduceOp::AVERAGE) {
+    ccl_reduction_op = ccl::reduction::sum;
     auto process_set_id = first_entry.process_set_id;
     auto& process_set = global_state_->process_set_table.Get(process_set_id);
     // Averaging happens via postscale_factor
     postscale_factor /= process_set.controller->GetSize();
+  } else if (response.reduce_op() == ReduceOp::SUM) {
+    ccl_reduction_op = ccl::reduction::sum;
+  } else if (response.reduce_op() == ReduceOp::MIN) {
+    ccl_reduction_op = ccl::reduction::min;
+  } else if (response.reduce_op() == ReduceOp::MAX) {
+    ccl_reduction_op = ccl::reduction::max;
+  } else if (response.reduce_op() == ReduceOp::PRODUCT) {
+    ccl_reduction_op = ccl::reduction::prod;
+  } else {
+    throw std::logic_error("Reduction op type not supported.");
   }
 
   LOG(DEBUG) << "CCLGPUAllreduce::Execute"
@@ -476,7 +487,7 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
     ccl_event = std::make_shared<ccl::event>(ccl::allreduce(
         fused_input_data, buffer_data, (size_t)num_elements,
-        GetCCLDataType(first_entry.tensor), ccl::reduction::sum,
+        GetCCLDataType(first_entry.tensor), ccl_reduction_op,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
         ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr));
   });
