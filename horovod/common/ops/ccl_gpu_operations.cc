@@ -834,8 +834,50 @@ bool CCLGPUAlltoall::Enabled(const ParameterManager& param_manager,
 
 Status CCLGPUAlltoall::Execute(std::vector<TensorTableEntry>& entries,
                                const Response& response) {
-  // TODO(IOH): TBD
-  return Status::OK();
+  assert(entries.size() == 1);
+  auto e = entries[0];
+  
+  ccl_op_context_.InitGPU(entries);
+  ccl_op_context_.InitCCLComm(entries, response.devices());
+  ccl_op_context_.InitGPUQueue(entries, response);
+
+  WaitForData(entries);
+
+  std::vector<size_t> sdispls, rdispls;
+  std::vector<size_t> sendcounts, recvcounts;
+  Status status = PrepareOutputAndParams(e, sdispls, rdispls, sendcounts, recvcounts);
+  if (!status.ok()) {
+    return status;
+  }
+
+  const void* sendbuf = e.tensor->data();
+  void* buffer_data = (void*) e.output->data();
+
+  // TODO(Pengfei): support empty sendbuf
+  if (sendbuf == nullptr) {
+    throw std::logic_error(
+            "CCLGPUAlltoall with empty entry not implemented yet.");
+  }
+
+  // Do alltoall
+  LOG(DEBUG) << "Do CCLGPUAlltoall";
+  std::shared_ptr<ccl::event> ccl_event;
+  CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
+    ccl_event = std::make_shared<ccl::event>(ccl::alltoallv(
+        sendbuf, sendcounts, buffer_data, recvcounts,
+        GetCCLDataType(e.tensor), 
+        ccl_op_context_.GetCCLComm(e, response.devices()),
+        ccl_op_context_.GetCCLStream(e, response.devices())));
+  });
+
+  if (global_state_->timeline.Initialized()) {
+    ccl_context_->RecordEvent(ccl_op_context_.event_queue, CCL_ALLTOALL,
+                              ccl_op_context_.stream);
+  }
+
+  return ccl_op_context_.FinalizeGPUQueue(
+      entries, ccl_data{ccl_event}, true,
+      ccl_op_context_.error_check_callback_);
 }
 
 void CCLGPUAlltoall::WaitForData(std::vector<TensorTableEntry>& entries) {

@@ -1980,6 +1980,13 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall")
                             .HostMemory("splits")
                             .HostMemory("received_splits"),
                         HorovodAlltoallOp);
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodAlltoall")
+                            .Device(DEVICE_XPU)
+                            .HostMemory("splits")
+                            .HostMemory("received_splits"),
+                        HorovodAlltoallOp);
+#endif
 #endif
 
 REGISTER_OP("HorovodAlltoall")

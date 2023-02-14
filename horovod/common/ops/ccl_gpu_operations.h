@@ -271,6 +271,80 @@ public:
 protected:
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
+  template <typename T>
+  Status PrepareOutputAndParams(TensorTableEntry& e,
+                                std::vector<T>& sdispls,
+                                std::vector<T>& rdispls,
+                                std::vector<T>& sendcounts,
+                                std::vector<T>& recvcounts) {
+    auto& process_set = global_state_->process_set_table.Get(e.process_set_id);
+    auto world_size = process_set.controller->GetSize();
+
+    const auto& splits = e.splits;
+    std::vector<int32_t> recvsplits;
+
+    process_set.controller->AlltoallGetRecvSplits(splits, recvsplits);
+
+    // Every tensor participating in Alltoall operation may have different
+    // first dimension size, but the rest of dimensions are same for all
+    // tensors.  Here we get shape of tensor sliced by first dimension.
+    TensorShape slice_shape;
+    for (int i = 1; i < e.tensor->shape().dims(); ++i) {
+      slice_shape.AddDim(e.tensor->shape().dim_size(i));
+    }
+    int64_t slice_num_elements = slice_shape.num_elements();
+
+    // Prepare send/recvcounts and displacements for Alltoallv
+    sdispls.resize(world_size);
+    rdispls.resize(world_size);
+    sendcounts.resize(world_size);
+    recvcounts.resize(world_size);
+
+    size_t output_first_dim = 0;
+    for (int i = 0; i < world_size; ++i) {
+      sendcounts[i] = splits[i] * slice_num_elements;
+      recvcounts[i] = recvsplits[i] * slice_num_elements;
+      output_first_dim += recvsplits[i];
+    }
+
+    for (int i = 1; i < world_size; ++i) {
+      sdispls[i] = sdispls[i-1] + sendcounts[i-1];
+      rdispls[i] = rdispls[i-1] + recvcounts[i-1];
+    }
+
+    // Allocate output
+    TensorShape output_shape;
+    output_shape.AddDim(output_first_dim);
+    output_shape.AppendShape(slice_shape);
+
+    Status status = e.context->AllocateOutput(output_shape, &e.output);
+    if (!status.ok()) {
+      LOG(WARNING)
+          << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate output: "
+          << status.reason();
+      return status;
+    }
+
+    // Allocate and fill received_splits output
+    TensorShape received_splits_shape;
+    received_splits_shape.AddDim(recvsplits.size());
+
+    Status rstatus = e.context->AllocateOutput(1, received_splits_shape,
+                                               &e.received_splits);
+    if (!rstatus.ok()) {
+      LOG(WARNING) << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate "
+                      "received_splits: "
+                   << status.reason();
+      return rstatus;
+    }
+
+    auto* target_pointer = reinterpret_cast<int32_t*>(
+        const_cast<void*>(e.received_splits->data()));
+    std::copy(recvsplits.cbegin(), recvsplits.cend(), target_pointer);
+
+    return Status::OK();
+  }
+
   CCLGPUContext* ccl_context_;
   CCLGPUOpContext ccl_op_context_;
   HorovodGlobalState* global_state_;
