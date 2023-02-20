@@ -1351,7 +1351,17 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_alltoall_async_torch_HalfTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_FloatTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_DoubleTensor", &DoAlltoall);
-#if HOROVOD_GPU_ALLTOALL && (HOROVOD_GPU_ALLTOALL != 'C')
+#if HOROVOD_GPU_ALLTOALL == 'C'
+  m.def("horovod_torch_alltoall_async_torch_xpu_ByteTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_CharTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_ShortTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_IntTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_LongTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_HalfTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_FloatTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_DoubleTensor", &DoAlltoall);
+  m.def("horovod_torch_alltoall_async_torch_xpu_BFloat16Tensor", &DoAlltoall);
+#elif HOROVOD_GPU_ALLTOALL
   m.def("horovod_torch_alltoall_async_torch_cuda_ByteTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_cuda_CharTensor", &DoAlltoall);
   m.def("horovod_torch_alltoall_async_torch_cuda_ShortTensor", &DoAlltoall);
