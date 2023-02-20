@@ -850,6 +850,10 @@ REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLGATHER
 REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_GPU),
                         HorovodAllgatherOp);
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodAllgather").Device(DEVICE_XPU),
+                        HorovodAllgatherOp);
+#endif
 #endif
 
 REGISTER_OP("HorovodAllgather")
@@ -984,6 +988,10 @@ REGISTER_KERNEL_BUILDER(Name("HorovodGroupedAllgather").Device(DEVICE_CPU),
 #if HOROVOD_GPU_ALLGATHER
 REGISTER_KERNEL_BUILDER(Name("HorovodGroupedAllgather").Device(DEVICE_GPU),
                         HorovodGroupedAllgatherOp);
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodGroupedAllgather").Device(DEVICE_XPU),
+                        HorovodGroupedAllgatherOp);
+#endif
 #endif
 
 REGISTER_OP("HorovodGroupedAllgather")

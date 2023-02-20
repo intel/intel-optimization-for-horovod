@@ -783,7 +783,216 @@ bool CCLGPUAllgather::Enabled(const ParameterManager& param_manager,
 
 Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
                                 const Response& response) {
-  // TODO(IOH): TBD
+  CheckTensorTableEntry(entries);
+  auto& first_entry = entries[0];
+  auto& process_set =
+      global_state_->process_set_table.Get(first_entry.process_set_id);
+
+  ccl_op_context_.InitGPU(entries);
+  ccl_op_context_.InitCCLComm(entries, response.devices());
+  ccl_op_context_.InitGPUQueue(entries, response);
+
+  WaitForData(entries);
+
+  // Sizes of subcomponents of each entry from all ranks
+  auto** entry_component_sizes = new int64_t*[entries.size()];
+
+  // Offset of each subcomponent of every entry in the final buffer after
+  // allgatherv
+  auto** entry_component_offsets = new int64_t*[entries.size()];
+
+  int global_size = process_set.controller->GetSize();
+  
+  auto* recvcounts = new int[global_size]();
+  auto* displcmnts = new int[global_size]();
+
+  for (size_t ec = 0; ec < entries.size(); ++ec) {
+    entry_component_sizes[ec] = new int64_t[global_size]();
+    entry_component_offsets[ec] = new int64_t[global_size]();
+  }
+
+  global_state_->timeline.ActivityStartAll(entries, ALLOCATE_OUTPUT);
+  Status status =
+      AllocateOutput(entries, response, entry_component_sizes, recvcounts);
+  if (!status.ok()) {
+    for (size_t ec = 0; ec < entries.size(); ++ec) {
+      delete[] entry_component_sizes[ec];
+      delete[] entry_component_offsets[ec];
+    }
+    delete[] entry_component_sizes;
+    delete[] entry_component_offsets;
+    delete[] recvcounts;
+    delete[] displcmnts;
+    return status;
+  }
+
+  global_state_->timeline.ActivityEndAll(entries);
+
+  SetDisplacements(recvcounts, displcmnts, global_size);
+  SetEntryComponentOffsets(entries, entry_component_sizes, recvcounts, entry_component_offsets);
+
+  size_t element_size = DataType_Size(first_entry.tensor->dtype());
+
+  const void* fused_input_data = nullptr;
+  void* buffer_data;
+  int64_t num_elements = NumElements(entries);
+  int64_t gather_size = 0;
+
+  // Copy memory into the fusion buffer.
+  if (entries.size() > 1) {
+    MemcpyInFusionBuffer(entries, displcmnts, element_size, buffer_data);
+
+    if (global_state_->timeline.Initialized()) {
+      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+                                MEMCPY_IN_FUSION_BUFFER,
+                                ccl_op_context_.stream);
+    }
+  } else {
+    fused_input_data = first_entry.tensor->data();
+    buffer_data = const_cast<void*>(first_entry.output->data());
+  }
+
+  std::vector<size_t> rcounts(global_size);
+  for (unsigned int rc = 0; rc < global_size; rc++) {
+    rcounts[rc] = recvcounts[rc] * element_size;
+    gather_size += rcounts[rc];
+  }
+
+  // Do allgather
+  LOG(DEBUG) << "Do CCLGPUAllgather, number of elements: " << num_elements
+             << ", dtype: " << DataType_Name(first_entry.tensor->dtype());
+  std::shared_ptr<ccl::event> ccl_event;
+  CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
+    ccl_event = std::make_shared<ccl::event>(ccl::allgatherv(
+        fused_input_data != nullptr ? (void *)fused_input_data : buffer_data, 
+        num_elements * element_size, buffer_data, rcounts,
+        ccl::datatype::int8,
+        ccl_op_context_.GetCCLComm(first_entry, response.devices()),
+        ccl_op_context_.GetCCLStream(first_entry, response.devices())));
+  });
+
+  // Copy memory out of the fusion buffer.
+  if (entries.size() > 1) {
+    MemcpyOutFusionBuffer(entry_component_offsets, entry_component_sizes,
+                          buffer_data, element_size, entries);
+    if (global_state_->timeline.Initialized()) {
+      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+                                MEMCPY_OUT_FUSION_BUFFER,
+                                ccl_op_context_.stream);
+    }
+  }
+
+  delete[] recvcounts;
+  delete[] displcmnts;
+
+  for (size_t ec = 0; ec < entries.size(); ++ec) {
+    delete[] entry_component_sizes[ec];
+    delete[] entry_component_offsets[ec];
+  }
+  delete[] entry_component_sizes;
+  delete[] entry_component_offsets;
+
+  return ccl_op_context_.FinalizeGPUQueue(
+      entries, ccl_data{ccl_event}, true,
+      ccl_op_context_.error_check_callback_);
+}
+
+void CCLGPUAllgather::MemcpyInFusionBuffer(
+    const std::vector<TensorTableEntry>& entries, const int* displcmnts,
+    int element_size, void*& buffer_data) {
+  // Access first entry for retrieving context
+  auto& first_entry = entries[0];
+  auto buffer = global_state_->fusion_buffer.GetBuffer(
+      first_entry.device, first_entry.context->framework(),
+      global_state_->current_ccl_stream);
+  buffer_data = const_cast<void*>(buffer->AccessData(first_entry.context));
+  auto& process_set =
+      global_state_->process_set_table.Get(first_entry.process_set_id);
+  int64_t offset = (int64_t)displcmnts[process_set.controller->GetRank()] *
+                   (int64_t)element_size;
+  
+  // TODO(IOH): Enable batch memory copy for allgather
+  // use the default AllgatherOps implementation
+  for (auto& e : entries) {
+    void* buffer_data_at_offset = (uint8_t*)buffer_data + offset;
+    MemcpyEntryInFusionBuffer(entries, e, buffer_data_at_offset);
+    offset += e.tensor->size();
+  }
+}
+
+void CCLGPUAllgather::MemcpyOutFusionBuffer(
+  const int64_t* const* entry_component_offsets,
+  const int64_t* const* entry_component_sizes, const void* buffer_data,
+  int element_size, std::vector<TensorTableEntry>& entries) {
+  // TODO(IOH): Enable batch memory copy for allgather
+  // use the default AllgatherOps implementation
+  for (size_t ec = 0; ec < entries.size(); ++ec) {
+    auto& e = entries[ec];
+    auto& process_set =
+        global_state_->process_set_table.Get(e.process_set_id);
+    int global_size = process_set.controller->GetSize();
+    int64_t copy_offset = 0;
+    for (int rc = 0; rc < global_size; ++rc) {
+      int64_t entry_offset = entry_component_offsets[ec][rc] * element_size;
+      int64_t entry_size = entry_component_sizes[ec][rc] * element_size;
+      const void* buffer_data_at_offset =
+          (uint8_t*)buffer_data + entry_offset;
+      MemcpyEntryOutFusionBuffer(entries, buffer_data_at_offset, e,
+                                  copy_offset, entry_size);
+      copy_offset += entry_size;
+    }
+  }
+}
+
+Status CCLGPUAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
+                                   const Response& response,
+                                   int64_t**& entry_component_sizes,
+                                   int*& recvcounts) {
+  for (size_t ec = 0; ec < entries.size(); ++ec) {
+    auto& e = entries[ec];
+    auto& process_set = global_state_->process_set_table.Get(e.process_set_id);
+    int global_size = process_set.controller->GetSize();
+    // Every tensor participating in Allgather operation may have different
+    // first dimension size, but the rest of dimensions are same for all
+    // tensors.  Here we get shape of tensor sliced by first dimension.
+    TensorShape single_slice_shape;
+    for (int i = 1; i < e.tensor->shape().dims(); ++i) {
+      single_slice_shape.AddDim(e.tensor->shape().dim_size(i));
+    }
+
+    // Copy tensor sizes from the response into a vector of int64_t
+    // and compute total size.  This is size of first dimension.
+    int64_t total_entry_dimension_size = 0;
+    const auto& tensor_sizes = response.tensor_sizes();
+    for (int rc = 0; rc < global_size; ++rc) {
+      auto component_size = tensor_sizes[ec * global_size + rc];
+      total_entry_dimension_size += component_size;
+
+      if (recvcounts) {
+        recvcounts[rc] += component_size * single_slice_shape.num_elements();
+      }
+
+      if (entry_component_sizes) {
+        entry_component_sizes[ec][rc] =
+                          component_size * single_slice_shape.num_elements();
+      }
+    }
+
+    // Allgather output will have shape of:
+    // (sum of first dimension of every tensor) x (tensor slice shape).
+    TensorShape output_shape;
+    output_shape.AddDim((int64_t)total_entry_dimension_size);
+    output_shape.AppendShape(single_slice_shape);
+
+    Status status = e.context->AllocateOutput(e.output_index, output_shape,
+                                              &e.output);
+    if (!status.ok()) {
+      LOG(WARNING) << "CCLGPUAllgather::AllocateOutput failed: "
+                   << status.reason();
+      return status;
+    }
+  }
+
   return Status::OK();
 }
 
