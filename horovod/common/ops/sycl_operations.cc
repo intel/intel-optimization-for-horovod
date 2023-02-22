@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Intel CORPORATION. All rights reserved.
+// Copyright (C) 2022-2023 Intel CORPORATION. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -88,6 +88,10 @@ public:
         timeline.ActivityStartAll(entries, name);
       }
       event.event->wait();
+      if (error_check_callback) {
+        error_check_callback();
+      }
+
       if (name != "") {
         timeline.ActivityEndAll(entries);
       }
@@ -146,18 +150,20 @@ public:
     });
   }
 
-  void StreamCreate(gpuStream_t* stream) {
-    throw std::logic_error("Not supported by SYCL.");
+  void StreamCreate(const TensorTableEntry& e, gpuStream_t& stream) {
+    auto org_q = e.context->SYCLQueue();
+    auto property_list = sycl::property_list{sycl::property::queue::in_order()};
+    stream.reset(new sycl::queue(org_q.get_context(), org_q.get_device(),
+                                 property_list));
   }
 
   void StreamSynchronize(gpuStream_t& stream) { stream->wait(); }
 
-  int GetDevice() {
-    throw std::logic_error("Not supported by SYCL.");
-  }
+  int GetDevice() { throw std::logic_error("Not supported by SYCL."); }
 
   void SetDevice(int device) {
-    throw std::logic_error("Not supported by SYCL.");
+    // SYCL does not support SetDevice
+    return;
   }
 
   void MemcpyAsyncD2D(void* dst, const void* src, size_t count,

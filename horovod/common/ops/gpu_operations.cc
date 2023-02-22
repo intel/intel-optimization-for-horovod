@@ -44,7 +44,11 @@ void GPUOpContext::InitGPU(const std::vector<TensorTableEntry>& entries) {
       gpu_context_
           ->streams[global_state_->current_nccl_stream][first_entry.device];
   if (stream == nullptr) {
+#if HAVE_SYCL
+    gpu_context_->StreamCreate(first_entry, stream);
+#else
     gpu_context_->StreamCreate(&stream);
+#endif
   }
 }
 

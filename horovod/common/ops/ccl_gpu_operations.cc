@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Intel CORPORATION. All rights reserved.
+// Copyright (C) 2022-2023 Intel CORPORATION. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 
 #include "ccl_gpu_operations.h"
 
+// TODO(IOH): move to sycl_operations.cc
 #include "sycl/sycl_kernels.h"
 
 namespace horovod {
@@ -53,112 +54,7 @@ ccl::datatype GetCCLDataType(const std::shared_ptr<Tensor>& tensor) {
 inline void
 CheckTensorTableEntry(const std::vector<TensorTableEntry>& entries) {
   if (entries.empty()) {
-    throw("TensorTableEntry is empty!");
-  }
-}
-
-int CCLGPUContext::GetGpuEvent(Event* event, gpuStream_t& stream) {
-  std::mutex mutex;
-  {
-    std::lock_guard<std::mutex> guard(mutex);
-
-    auto& queue = sycl_events[*stream];
-    if (!queue.empty()) {
-      *event = queue.front();
-      queue.pop();
-      return 0;
-    }
-  }
-
-  event->event = std::make_shared<gpuEvent_t>();
-  event->stream = stream;
-
-  return 0;
-}
-
-gpuError_t CCLGPUContext::ReleaseGpuEvent(Event event) {
-  std::mutex mutex;
-  {
-    std::lock_guard<std::mutex> guard(mutex);
-    auto& queue = sycl_events[*event.stream];
-    queue.push(event);
-  }
-  return sycl::errc::success;
-}
-
-void CCLGPUContext::RecordEvent(
-    std::queue<std::pair<std::string, Event>>& event_queue, std::string name,
-    gpuStream_t& stream) {
-  Event event;
-  GetGpuEvent(&event, stream);
-  *(event.event) = stream->ext_oneapi_submit_barrier();
-  event_queue.emplace(name, event);
-}
-
-Event CCLGPUContext::RecordEvent(gpuStream_t& stream) {
-  Event event;
-  GetGpuEvent(&event, stream);
-  *(event.event) = stream->ext_oneapi_submit_barrier();
-  return event;
-}
-
-void CCLGPUContext::WaitForEvents(
-    std::queue<std::pair<std::string, Event>>& event_queue,
-    const std::vector<TensorTableEntry>& entries, Timeline& timeline,
-    const std::function<void()>& error_check_callback) {
-  while (!event_queue.empty()) {
-    std::string name;
-    Event event;
-    std::tie(name, event) = event_queue.front();
-    event_queue.pop();
-    if (name != "") {
-      timeline.ActivityStartAll(entries, name);
-    }
-    CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
-      // TODO: need ccl_event for elastic
-      auto events_it = sycl_2_ccl_event_map.find(*(event.event));
-      if (events_it != sycl_2_ccl_event_map.end()) {
-        // TODO(Maozhou): necessary wait here?
-        events_it->second->wait();
-        sycl_2_ccl_event_map.erase(events_it);
-      }
-    });
-    event.event->wait();
-    if (name != "") {
-      timeline.ActivityEndAll(entries);
-    }
-    ReleaseGpuEvent(event);
-  }
-}
-
-void CCLGPUContext::ClearEvents(
-    std::queue<std::pair<std::string, Event>>& event_queue,
-    const std::vector<TensorTableEntry>& entries, Timeline& timeline,
-    const std::function<void()>& error_check_callback, bool elastic) {
-  while (!event_queue.empty()) {
-    std::string name;
-    Event event;
-    std::tie(name, event) = event_queue.front();
-    event_queue.pop();
-    if (name != "") {
-      timeline.ActivityStartAll(entries, name);
-    }
-
-    if (name != "") {
-      timeline.ActivityEndAll(entries);
-    }
-    ReleaseGpuEvent(event);
-  }
-}
-
-void CCLGPUContext::StreamCreate(const TensorTableEntry& e,
-                                 gpuStream_t& stream) {
-  auto org_q = e.context->SYCLQueue();
-  auto property_list = sycl::property_list{sycl::property::queue::in_order()};
-  stream.reset(
-      new sycl::queue(org_q.get_context(), org_q.get_device(), property_list));
-  if (!(stream)->is_in_order()) {
-    throw std::runtime_error("SYCL queue should be with in_order property");
+    throw std::runtime_error("TensorTableEntry is empty!");
   }
 }
 
@@ -169,40 +65,10 @@ void CCLGPUContext::Initialize(HorovodGlobalState& state) {
   LOG(INFO) << "CCLGPUContext initialized: \n"
             << "enable_cache " << enable_cache << "\n";
 
-  auto fin_thread_count_env = std::getenv(HOROVOD_CCL_FIN_THREAD_COUNT);
-  int fin_thread_count = 1;
-  if (fin_thread_count_env != nullptr &&
-      std::stol(fin_thread_count_env, nullptr, 10) > 0) {
-    fin_thread_count = std::atoi(fin_thread_count_env);
-  }
-
-  state.num_ccl_streams = fin_thread_count;
-  finalizer_thread_pool.create(state.num_ccl_streams);
-  auto fin_thread_affinity_env = std::getenv(HOROVOD_CCL_FIN_THREAD_AFFINITY);
-  if (fin_thread_affinity_env) {
-    LOG(INFO) << "fin_thread_affinity " << fin_thread_affinity_env;
-  }
-
-  int local_size = state.global_controller->GetLocalSize();
-  int local_rank = state.global_controller->GetLocalRank();
-
-  if (fin_thread_affinity_env) {
-    for (int i = 0; i < fin_thread_count; i++) {
-      finalizer_thread_pool.execute([&]() mutable {
-        parse_and_set_affinity(fin_thread_affinity_env,
-                               fin_thread_count * local_size,
-                               fin_thread_count * local_rank + i);
-      });
-    }
-  }
-  ccl_comms.resize(state.num_ccl_streams);
-  streams.resize(state.num_ccl_streams);
+  ccl_comms.resize(state.num_nccl_streams);
 }
 
-void CCLGPUContext::Finalize(HorovodGlobalState& state) {
-  finalizer_thread_pool.reset();
-  ccl_comms.clear();
-}
+void CCLGPUContext::Finalize() { ccl_comms.clear(); }
 
 CCLGPUOpContext::~CCLGPUOpContext() {
   ccl_streams.clear();
@@ -210,105 +76,15 @@ CCLGPUOpContext::~CCLGPUOpContext() {
   ccl_contexts.clear();
 }
 
-void CCLGPUOpContext::InitGPU(const std::vector<TensorTableEntry>& entries) {
-  auto& first_entry = entries[0];
-
-  LOG(DEBUG) << "CCLGPUOpContext:: #entries: " << entries.size() << " device "
-             << first_entry.device;
-
-  if (ccl_context_->streams[global_state_->current_ccl_stream].empty()) {
-    ccl_context_->StreamCreate(first_entry, stream);
-    ccl_context_->streams[global_state_->current_ccl_stream].insert(
-        {first_entry.device, stream});
-  }
-}
-
-void CCLGPUOpContext::InitGPUQueue(const std::vector<TensorTableEntry>& entries,
-                                   const Response& response) {
-  event_queue = std::queue<std::pair<std::string, Event>>();
-  stream = ccl_context_
-               ->streams[global_state_->current_ccl_stream][entries[0].device];
-
-  if (global_state_->timeline.Initialized()) {
-    ccl_context_->RecordEvent(event_queue, QUEUE, stream);
-  }
-}
-
-Status CCLGPUOpContext::FinalizeGPUQueue(
-    std::vector<TensorTableEntry>& entries, ccl_data ccl_util_data,
-    bool free_host_buffer /*= true*/,
-    const std::function<void()>& error_check_callback) {
-  // Use completion marker via event because it's faster than
-  // blocking gpuStreamSynchronize() in this thread.
-  if (!global_state_->enable_async_completion) {
-    CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
-      ccl_context_->RecordEvent(event_queue, "", stream);
-      ccl_context_->sycl_2_ccl_event_map.emplace(
-          *(event_queue.back().second.event), ccl_util_data.ccl_event);
-    });
-  }
-  auto& first_entry = entries[0];
-  void* cpu_buffer = host_buffer;
-  auto& evt_queue = event_queue;
-  auto& timeline = global_state_->timeline;
-  auto& ccl_context = ccl_context_;
-
-  // Claim a std::shared_ptr to the fusion buffer to prevent its memory from
-  // being reclaimed during finalization.
-  auto fusion_buffer = global_state_->fusion_buffer.GetBuffer(
-      first_entry.device, first_entry.context->framework(),
-      global_state_->current_ccl_stream); // TODO
-
-  bool elastic = global_state_->elastic_enabled;
-  bool enable_async_completion = global_state_->enable_async_completion;
-  auto current_stream = stream;
-  ccl_context_->finalizer_thread_pool.execute(
-      [entries, first_entry, cpu_buffer, fusion_buffer, free_host_buffer,
-       evt_queue, &timeline, &ccl_context, error_check_callback, elastic,
-       enable_async_completion, current_stream, ccl_util_data]() mutable {
-        Event event;
-        if (!enable_async_completion || timeline.Initialized()) {
-          ccl_context->WaitForEvents(evt_queue, entries, timeline,
-                                     error_check_callback);
-        } else {
-          // TODO: non-validated yet
-          ccl_context->ClearEvents(evt_queue, entries, timeline,
-                                   error_check_callback, elastic);
-          event = ccl_context->RecordEvent(current_stream);
-        }
-
-        // TODO: drop it, if don't need
-        if (free_host_buffer && cpu_buffer != nullptr) {
-          free(cpu_buffer);
-        }
-
-        for (auto& e : entries) {
-          timeline.End(e.tensor_name, e.output);
-          auto status = Status::OK();
-          status.event = event;
-          e.FinishWithCallback(status);
-        }
-        if (enable_async_completion) {
-          // TODO(Maozhou): ErrorCheck?
-          ccl_context->ReleaseGpuEvent(event);
-        }
-      });
-
-  // Update current stream
-  global_state_->current_ccl_stream =
-      (global_state_->current_ccl_stream + 1) % global_state_->num_ccl_streams;
-
-  return Status::InProgress();
-}
-
-void CCLGPUOpContext::InitCCLComm(const std::vector<TensorTableEntry>& entries,
+void CCLGPUOpContext::InitCCLComm(const gpuStream_t& stream,
+                                  const std::vector<TensorTableEntry>& entries,
                                   const std::vector<int32_t>& ccl_device_map) {
   CheckTensorTableEntry(entries);
 
   auto process_set_id = entries[0].process_set_id;
   auto& process_set = global_state_->process_set_table.Get(process_set_id);
 
-  if (ccl_context_->ccl_comms[global_state_->current_ccl_stream].empty()) {
+  if (ccl_context_->ccl_comms[global_state_->current_nccl_stream].empty()) {
     auto& timeline = global_state_->timeline;
     timeline.ActivityStartAll(entries, INIT_CCL);
 
@@ -330,14 +106,14 @@ void CCLGPUOpContext::InitCCLComm(const std::vector<TensorTableEntry>& entries,
       kvs_ = ccl::create_kvs(main_addr);
     }
 
+    auto queue = stream;
     {
       std::lock_guard<std::mutex> lock(CCLGPUContext::GlobalMutex);
-      auto queue = stream;
       ccl_streams.push_back(ccl::create_stream(*queue));
       ccl_devices.push_back(ccl::create_device(queue->get_device()));
       ccl_contexts.push_back(ccl::create_context(queue->get_context()));
       // fill ccl_comms via creating communicator
-      ccl_context_->ccl_comms[global_state_->current_ccl_stream].insert(
+      ccl_context_->ccl_comms[global_state_->current_nccl_stream].insert(
           {std::make_tuple(process_set_id, ccl_device_map),
            ccl4hvd{ccl_streams[0],
                    ccl::create_communicator(ccl_size, ccl_rank, ccl_devices[0],
@@ -375,7 +151,7 @@ bool CCLGPUOpContext::IsEnabled(
 ccl::communicator&
 CCLGPUOpContext::GetCCLComm(const TensorTableEntry& entry,
                             const std::vector<int32_t>& devices) {
-  return ccl_context_->ccl_comms[global_state_->current_ccl_stream]
+  return ccl_context_->ccl_comms[global_state_->current_nccl_stream]
       .at(std::make_tuple(entry.process_set_id, devices))
       .ccl_comm_;
 }
@@ -383,7 +159,7 @@ CCLGPUOpContext::GetCCLComm(const TensorTableEntry& entry,
 ccl::stream&
 CCLGPUOpContext::GetCCLStream(const TensorTableEntry& entry,
                               const std::vector<int32_t>& devices) {
-  return ccl_context_->ccl_comms[global_state_->current_ccl_stream]
+  return ccl_context_->ccl_comms[global_state_->current_nccl_stream]
       .at(std::make_tuple(entry.process_set_id, devices))
       .ccl_stream_;
 }
@@ -394,9 +170,13 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   CheckTensorTableEntry(entries);
   auto& first_entry = entries[0];
 
-  ccl_op_context_.InitGPU(entries);
-  ccl_op_context_.InitCCLComm(entries, response.devices());
-  ccl_op_context_.InitGPUQueue(entries, response);
+  gpu_op_context_.InitGPU(entries);
+  gpu_op_context_.InitGPUQueue(entries, response);
+
+  auto stream =
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device];
+  ccl_op_context_.InitCCLComm(stream, entries, response.devices());
 
   WaitForData(entries);
 
@@ -423,8 +203,8 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   }
 
   LOG(DEBUG) << "CCLGPUAllreduce::Execute"
-            << " final prescale_factor: " << prescale_factor
-            << " final postscale_factor: " << postscale_factor;
+             << " final prescale_factor: " << prescale_factor
+             << " final postscale_factor: " << postscale_factor;
 
   const void* fused_input_data;
   void* buffer_data;
@@ -434,9 +214,9 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
     ScaleMemcpyInFusionBuffer(entries, fused_input_data, buffer_data,
                               buffer_len, prescale_factor);
     if (global_state_->timeline.Initialized()) {
-      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+      gpu_context_->RecordEvent(gpu_op_context_.event_queue,
                                 MEMCPY_IN_FUSION_BUFFER,
-                                ccl_op_context_.stream);
+                                *gpu_op_context_.stream);
     }
   } else {
     fused_input_data = first_entry.tensor->data();
@@ -446,8 +226,8 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
         buffer_len / DataType_Size(first_entry.tensor->dtype());
     if (prescale_factor != 1.0) {
       // Execute prescaling op
-      ScaleBuffer(prescale_factor, entries, fused_input_data,
-                  buffer_data, num_elements);
+      ScaleBuffer(prescale_factor, entries, fused_input_data, buffer_data,
+                  num_elements);
       fused_input_data = buffer_data; // for unfused, scale is done out of place
     }
   }
@@ -483,40 +263,41 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
       buffer_len / DataType_Size(first_entry.tensor->dtype());
   LOG(DEBUG) << "Do CCLGPUAllreduce, number of elements: " << num_elements
              << ", dtype: " << DataType_Name(first_entry.tensor->dtype());
-  std::shared_ptr<ccl::event> ccl_event;
+
+  // TODO(Maozhou): we assume oneCCL honors SYCL in-order queue semantics, and
+  // can use the sycl::event from ccl::event.get_native() when oneCCL is ready
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
-    ccl_event = std::make_shared<ccl::event>(ccl::allreduce(
+    ccl::allreduce(
         fused_input_data, buffer_data, (size_t)num_elements,
         GetCCLDataType(first_entry.tensor), ccl_reduction_op,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr));
+        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr);
   });
 
   if (global_state_->timeline.Initialized()) {
-    ccl_context_->RecordEvent(ccl_op_context_.event_queue, CCL_ALLREDUCE,
-                              ccl_op_context_.stream);
+    gpu_context_->RecordEvent(gpu_op_context_.event_queue, CCL_ALLREDUCE,
+                              *gpu_op_context_.stream);
   }
 
   // Copy memory out of the fusion buffer.
   if (entries.size() > 1) {
-    ScaleMemcpyOutFusionBuffer(buffer_data, buffer_len,
-                               postscale_factor, entries);
+    ScaleMemcpyOutFusionBuffer(buffer_data, buffer_len, postscale_factor,
+                               entries);
     if (global_state_->timeline.Initialized()) {
-      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+      gpu_context_->RecordEvent(gpu_op_context_.event_queue,
                                 MEMCPY_OUT_FUSION_BUFFER,
-                                ccl_op_context_.stream);
+                                *gpu_op_context_.stream);
     }
   } else {
     if (postscale_factor != 1.0) {
       // Execute postscaling op
-      ScaleBuffer(postscale_factor, entries, buffer_data,
-                  buffer_data, num_elements);
+      ScaleBuffer(postscale_factor, entries, buffer_data, buffer_data,
+                  num_elements);
     }
   }
 
-  return ccl_op_context_.FinalizeGPUQueue(
-      entries, ccl_data{ccl_event}, true,
-      ccl_op_context_.error_check_callback_);
+  return gpu_op_context_.FinalizeGPUQueue(
+      entries, true, ccl_op_context_.error_check_callback_);
 }
 
 void CCLGPUAllreduce::ScaleMemcpyInFusionBuffer(
@@ -526,11 +307,11 @@ void CCLGPUAllreduce::ScaleMemcpyInFusionBuffer(
   // Access the fusion buffer.
   auto buffer = global_state_->fusion_buffer.GetBuffer(
       first_entry.device, first_entry.context->framework(),
-      global_state_->current_ccl_stream);
+      global_state_->current_nccl_stream);
   buffer_data = const_cast<void*>(buffer->AccessData(first_entry.context));
   auto stream =
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][first_entry.device];
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device];
 
   if (enableBatchedScaledD2DMemcpy(global_state_, entries)) {
     buffer_len = 0;
@@ -595,8 +376,8 @@ void CCLGPUAllreduce::ScaleMemcpyOutFusionBuffer(
     std::vector<TensorTableEntry>& entries) {
   auto& first_entry = entries[0];
   auto stream =
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][first_entry.device];
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device];
 
   if (enableBatchedScaledD2DMemcpy(global_state_, entries)) {
     int64_t offset = 0;
@@ -658,8 +439,8 @@ void CCLGPUAllreduce::MemcpyEntryInFusionBuffer(
   auto& first_entry = entries[0];
   gpu_context_->MemcpyAsyncD2D(
       buffer_data_at_offset, e.tensor->data(), (size_t)e.tensor->size(),
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][first_entry.device]);
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
 void CCLGPUAllreduce::MemcpyEntryOutFusionBuffer(
@@ -668,8 +449,8 @@ void CCLGPUAllreduce::MemcpyEntryOutFusionBuffer(
   auto& first_entry = entries[0];
   gpu_context_->MemcpyAsyncD2D(
       (void*)e.output->data(), buffer_data_at_offset, (size_t)e.tensor->size(),
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][first_entry.device]);
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
 void CCLGPUAllreduce::ScaleBuffer(double scale_factor,
@@ -679,8 +460,8 @@ void CCLGPUAllreduce::ScaleBuffer(double scale_factor,
   gpu_context_->ScaleBufferImpl(
       fused_input_data, buffer_data, num_elements, scale_factor,
       entries[0].tensor->dtype(),
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][entries[0].device]);
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][entries[0].device]);
 }
 
 bool CCLGPUAllreduce::Enabled(const ParameterManager& param_manager,
@@ -714,9 +495,13 @@ Status CCLGPUBroadcast::Execute(std::vector<TensorTableEntry>& entries,
   auto& process_set =
       global_state_->process_set_table.Get(first_entry.process_set_id);
 
-  ccl_op_context_.InitGPU(entries);
-  ccl_op_context_.InitCCLComm(entries, response.devices());
-  ccl_op_context_.InitGPUQueue(entries, response);
+  gpu_op_context_.InitGPU(entries);
+  gpu_op_context_.InitGPUQueue(entries, response);
+
+  auto stream =
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device];
+  ccl_op_context_.InitCCLComm(stream, entries, response.devices());
 
   WaitForData(entries);
 
@@ -730,25 +515,23 @@ Status CCLGPUBroadcast::Execute(std::vector<TensorTableEntry>& entries,
 
   // cache
   auto attr = ccl::create_operation_attr<ccl::broadcast_attr>();
-  std::shared_ptr<ccl::event> ccl_event;
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
-    ccl_event = std::make_shared<ccl::event>(ccl::broadcast(
+    ccl::broadcast(
         data_ptr,
         /* size */ first_entry.tensor->shape().num_elements() *
             DataType_Size(first_entry.tensor->dtype()),
         ccl::datatype::int8, first_entry.root_rank,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr));
+        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr);
   });
 
   if (global_state_->timeline.Initialized()) {
-    ccl_context_->RecordEvent(ccl_op_context_.event_queue, CCL_BCAST,
-                              ccl_op_context_.stream);
+    gpu_context_->RecordEvent(gpu_op_context_.event_queue, CCL_BCAST,
+                              *gpu_op_context_.stream);
   }
 
-  return ccl_op_context_.FinalizeGPUQueue(
-      entries, ccl_data{ccl_event}, true,
-      ccl_op_context_.error_check_callback_);
+  return gpu_op_context_.FinalizeGPUQueue(
+      entries, true, ccl_op_context_.error_check_callback_);
 }
 
 bool CCLGPUBroadcast::Enabled(const ParameterManager& param_manager,
@@ -788,9 +571,13 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
   auto& process_set =
       global_state_->process_set_table.Get(first_entry.process_set_id);
 
-  ccl_op_context_.InitGPU(entries);
-  ccl_op_context_.InitCCLComm(entries, response.devices());
-  ccl_op_context_.InitGPUQueue(entries, response);
+  gpu_op_context_.InitGPU(entries);
+  gpu_op_context_.InitGPUQueue(entries, response);
+
+  auto stream =
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device];
+  ccl_op_context_.InitCCLComm(stream, entries, response.devices());
 
   WaitForData(entries);
 
@@ -802,7 +589,7 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
   auto** entry_component_offsets = new int64_t*[entries.size()];
 
   int global_size = process_set.controller->GetSize();
-  
+
   auto* recvcounts = new int[global_size]();
   auto* displcmnts = new int[global_size]();
 
@@ -829,7 +616,8 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
   global_state_->timeline.ActivityEndAll(entries);
 
   SetDisplacements(recvcounts, displcmnts, global_size);
-  SetEntryComponentOffsets(entries, entry_component_sizes, recvcounts, entry_component_offsets);
+  SetEntryComponentOffsets(entries, entry_component_sizes, recvcounts,
+                           entry_component_offsets);
 
   size_t element_size = DataType_Size(first_entry.tensor->dtype());
 
@@ -843,9 +631,9 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
     MemcpyInFusionBuffer(entries, displcmnts, element_size, buffer_data);
 
     if (global_state_->timeline.Initialized()) {
-      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+      gpu_context_->RecordEvent(gpu_op_context_.event_queue,
                                 MEMCPY_IN_FUSION_BUFFER,
-                                ccl_op_context_.stream);
+                                *gpu_op_context_.stream);
     }
   } else {
     fused_input_data = first_entry.tensor->data();
@@ -861,14 +649,12 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
   // Do allgather
   LOG(DEBUG) << "Do CCLGPUAllgather, number of elements: " << num_elements
              << ", dtype: " << DataType_Name(first_entry.tensor->dtype());
-  std::shared_ptr<ccl::event> ccl_event;
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
-    ccl_event = std::make_shared<ccl::event>(ccl::allgatherv(
-        fused_input_data != nullptr ? (void *)fused_input_data : buffer_data, 
-        num_elements * element_size, buffer_data, rcounts,
-        ccl::datatype::int8,
+    ccl::allgatherv(
+        fused_input_data != nullptr ? (void*)fused_input_data : buffer_data,
+        num_elements * element_size, buffer_data, rcounts, ccl::datatype::int8,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices())));
+        ccl_op_context_.GetCCLStream(first_entry, response.devices()));
   });
 
   // Copy memory out of the fusion buffer.
@@ -876,9 +662,9 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
     MemcpyOutFusionBuffer(entry_component_offsets, entry_component_sizes,
                           buffer_data, element_size, entries);
     if (global_state_->timeline.Initialized()) {
-      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+      gpu_context_->RecordEvent(gpu_op_context_.event_queue,
                                 MEMCPY_OUT_FUSION_BUFFER,
-                                ccl_op_context_.stream);
+                                *gpu_op_context_.stream);
     }
   }
 
@@ -892,9 +678,8 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
   delete[] entry_component_sizes;
   delete[] entry_component_offsets;
 
-  return ccl_op_context_.FinalizeGPUQueue(
-      entries, ccl_data{ccl_event}, true,
-      ccl_op_context_.error_check_callback_);
+  return gpu_op_context_.FinalizeGPUQueue(
+      entries, true, ccl_op_context_.error_check_callback_);
 }
 
 void CCLGPUAllgather::MemcpyInFusionBuffer(
@@ -904,13 +689,13 @@ void CCLGPUAllgather::MemcpyInFusionBuffer(
   auto& first_entry = entries[0];
   auto buffer = global_state_->fusion_buffer.GetBuffer(
       first_entry.device, first_entry.context->framework(),
-      global_state_->current_ccl_stream);
+      global_state_->current_nccl_stream);
   buffer_data = const_cast<void*>(buffer->AccessData(first_entry.context));
   auto& process_set =
       global_state_->process_set_table.Get(first_entry.process_set_id);
   int64_t offset = (int64_t)displcmnts[process_set.controller->GetRank()] *
                    (int64_t)element_size;
-  
+
   // TODO(IOH): Enable batch memory copy for allgather
   // use the default AllgatherOps implementation
   for (auto& e : entries) {
@@ -921,33 +706,31 @@ void CCLGPUAllgather::MemcpyInFusionBuffer(
 }
 
 void CCLGPUAllgather::MemcpyOutFusionBuffer(
-  const int64_t* const* entry_component_offsets,
-  const int64_t* const* entry_component_sizes, const void* buffer_data,
-  int element_size, std::vector<TensorTableEntry>& entries) {
+    const int64_t* const* entry_component_offsets,
+    const int64_t* const* entry_component_sizes, const void* buffer_data,
+    int element_size, std::vector<TensorTableEntry>& entries) {
   // TODO(IOH): Enable batch memory copy for allgather
   // use the default AllgatherOps implementation
   for (size_t ec = 0; ec < entries.size(); ++ec) {
     auto& e = entries[ec];
-    auto& process_set =
-        global_state_->process_set_table.Get(e.process_set_id);
+    auto& process_set = global_state_->process_set_table.Get(e.process_set_id);
     int global_size = process_set.controller->GetSize();
     int64_t copy_offset = 0;
     for (int rc = 0; rc < global_size; ++rc) {
       int64_t entry_offset = entry_component_offsets[ec][rc] * element_size;
       int64_t entry_size = entry_component_sizes[ec][rc] * element_size;
-      const void* buffer_data_at_offset =
-          (uint8_t*)buffer_data + entry_offset;
-      MemcpyEntryOutFusionBuffer(entries, buffer_data_at_offset, e,
-                                  copy_offset, entry_size);
+      const void* buffer_data_at_offset = (uint8_t*)buffer_data + entry_offset;
+      MemcpyEntryOutFusionBuffer(entries, buffer_data_at_offset, e, copy_offset,
+                                 entry_size);
       copy_offset += entry_size;
     }
   }
 }
 
 Status CCLGPUAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
-                                   const Response& response,
-                                   int64_t**& entry_component_sizes,
-                                   int*& recvcounts) {
+                                       const Response& response,
+                                       int64_t**& entry_component_sizes,
+                                       int*& recvcounts) {
   for (size_t ec = 0; ec < entries.size(); ++ec) {
     auto& e = entries[ec];
     auto& process_set = global_state_->process_set_table.Get(e.process_set_id);
@@ -974,7 +757,7 @@ Status CCLGPUAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
 
       if (entry_component_sizes) {
         entry_component_sizes[ec][rc] =
-                          component_size * single_slice_shape.num_elements();
+            component_size * single_slice_shape.num_elements();
       }
     }
 
@@ -984,8 +767,8 @@ Status CCLGPUAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
     output_shape.AddDim((int64_t)total_entry_dimension_size);
     output_shape.AppendShape(single_slice_shape);
 
-    Status status = e.context->AllocateOutput(e.output_index, output_shape,
-                                              &e.output);
+    Status status =
+        e.context->AllocateOutput(e.output_index, output_shape, &e.output);
     if (!status.ok()) {
       LOG(WARNING) << "CCLGPUAllgather::AllocateOutput failed: "
                    << status.reason();
@@ -1018,8 +801,8 @@ void CCLGPUAllgather::MemcpyEntryInFusionBuffer(
   auto& first_entry = entries[0];
   gpu_context_->MemcpyAsyncD2D(
       buffer_data_at_offset, e.tensor->data(), (size_t)e.tensor->size(),
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][first_entry.device]);
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
 void CCLGPUAllgather::MemcpyEntryOutFusionBuffer(
@@ -1030,8 +813,8 @@ void CCLGPUAllgather::MemcpyEntryOutFusionBuffer(
   gpu_context_->MemcpyAsyncD2D(
       (int8_t*)e.output->data() + entry_offset, buffer_data_at_offset,
       entry_size,
-      ccl_context_
-          ->streams[global_state_->current_ccl_stream][first_entry.device]);
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
 // Alltoall
@@ -1045,48 +828,50 @@ Status CCLGPUAlltoall::Execute(std::vector<TensorTableEntry>& entries,
                                const Response& response) {
   assert(entries.size() == 1);
   auto e = entries[0];
-  
-  ccl_op_context_.InitGPU(entries);
-  ccl_op_context_.InitCCLComm(entries, response.devices());
-  ccl_op_context_.InitGPUQueue(entries, response);
+
+  gpu_op_context_.InitGPU(entries);
+  gpu_op_context_.InitGPUQueue(entries, response);
+
+  auto stream =
+      gpu_context_
+          ->streams[global_state_->current_nccl_stream][entries[0].device];
+  ccl_op_context_.InitCCLComm(stream, entries, response.devices());
 
   WaitForData(entries);
 
   std::vector<size_t> sdispls, rdispls;
   std::vector<size_t> sendcounts, recvcounts;
-  Status status = PrepareOutputAndParams(e, sdispls, rdispls, sendcounts, recvcounts);
+  Status status =
+      PrepareOutputAndParams(e, sdispls, rdispls, sendcounts, recvcounts);
   if (!status.ok()) {
     return status;
   }
 
   const void* sendbuf = e.tensor->data();
-  void* buffer_data = (void*) e.output->data();
+  void* buffer_data = (void*)e.output->data();
 
   // TODO(Pengfei): support empty sendbuf
   if (sendbuf == nullptr) {
     throw std::logic_error(
-            "CCLGPUAlltoall with empty entry not implemented yet.");
+        "CCLGPUAlltoall with empty entry not implemented yet.");
   }
 
   // Do alltoall
   LOG(DEBUG) << "Do CCLGPUAlltoall";
-  std::shared_ptr<ccl::event> ccl_event;
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
-    ccl_event = std::make_shared<ccl::event>(ccl::alltoallv(
-        sendbuf, sendcounts, buffer_data, recvcounts,
-        GetCCLDataType(e.tensor), 
-        ccl_op_context_.GetCCLComm(e, response.devices()),
-        ccl_op_context_.GetCCLStream(e, response.devices())));
+    ccl::alltoallv(sendbuf, sendcounts, buffer_data, recvcounts,
+                   GetCCLDataType(e.tensor),
+                   ccl_op_context_.GetCCLComm(e, response.devices()),
+                   ccl_op_context_.GetCCLStream(e, response.devices()));
   });
 
   if (global_state_->timeline.Initialized()) {
-    ccl_context_->RecordEvent(ccl_op_context_.event_queue, CCL_ALLTOALL,
-                              ccl_op_context_.stream);
+    gpu_context_->RecordEvent(gpu_op_context_.event_queue, CCL_ALLTOALL,
+                              *gpu_op_context_.stream);
   }
 
-  return ccl_op_context_.FinalizeGPUQueue(
-      entries, ccl_data{ccl_event}, true,
-      ccl_op_context_.error_check_callback_);
+  return gpu_op_context_.FinalizeGPUQueue(
+      entries, true, ccl_op_context_.error_check_callback_);
 }
 
 void CCLGPUAlltoall::WaitForData(std::vector<TensorTableEntry>& entries) {

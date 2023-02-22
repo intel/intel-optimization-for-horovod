@@ -480,13 +480,18 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   parse_and_set_affinity(std::getenv(HOROVOD_THREAD_AFFINITY), local_size,
                          local_rank);
 
-#if HAVE_GPU && !HAVE_SYCL
+#if HAVE_GPU
   // Set number of GPU streams to use
+#if HAVE_SYCL
+  // TODO(Maozhou): always set `num_nccl_streams` to 1 for oneCCL
+  state.num_nccl_streams = 1;
+#else
   auto horovod_num_nccl_streams = std::getenv(HOROVOD_NUM_NCCL_STREAMS);
   if (horovod_num_nccl_streams != nullptr &&
       std::stol(horovod_num_nccl_streams, nullptr, 10) > 0) {
     state.num_nccl_streams = std::atoi(horovod_num_nccl_streams);
   }
+#endif
 
 #if HAVE_NCCL
   nccl_context.nccl_comms.resize(state.num_nccl_streams);
@@ -760,7 +765,7 @@ shutdown:
   // finalize CCL before MPI
 #if HAVE_CCL
 #if HAVE_GPU
-  ccl_gpu_context.Finalize(state);
+  ccl_gpu_context.Finalize();
 #else
   if (state.cpu_operation == LibType::CCL) {
     ccl_context.Finalize();

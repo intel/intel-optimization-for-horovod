@@ -90,7 +90,12 @@ public:
                    Timeline& timeline,
                    const std::function<void()>& error_check_callback = nullptr,
                    bool elastic = false);
+#if HAVE_SYCL
+  // SYCL does not support SetDevice, we set device with framework stream
+  void StreamCreate(const TensorTableEntry& e, gpuStream_t& stream);
+#else
   void StreamCreate(gpuStream_t* stream);
+#endif
   void StreamSynchronize(gpuStream_t stream);
 
   int GetDevice();

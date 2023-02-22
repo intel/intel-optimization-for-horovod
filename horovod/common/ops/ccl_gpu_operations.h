@@ -1,4 +1,4 @@
-// Copyright (C) 2022 Intel CORPORATION. All rights reserved.
+// Copyright (C) 2022-2023 Intel CORPORATION. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,8 +30,6 @@
 #include "../logging.h"
 #include "gpu_operations.h"
 
-using cclComm_t = ccl::communicator;
-
 namespace horovod {
 namespace common {
 // TODO(Maozhou): combine w/ CCL CPU
@@ -39,11 +37,7 @@ ccl::datatype GetCCLDataType(const std::shared_ptr<Tensor>& tensor);
 
 struct ccl4hvd {
   ccl::stream ccl_stream_;
-  cclComm_t ccl_comm_;
-};
-
-struct ccl_data {
-  std::shared_ptr<ccl::event>& ccl_event;
+  ccl::communicator ccl_comm_;
 };
 
 class CCLGPUContext {
@@ -52,33 +46,7 @@ public:
   ~CCLGPUContext() = default;
 
   void Initialize(HorovodGlobalState& state);
-  void Finalize(HorovodGlobalState& state);
-
-  // TODO(Maozhou): use the ones from GPUContext
-  int GetGpuEvent(Event* event, gpuStream_t& stream);
-
-  gpuError_t ReleaseGpuEvent(Event event);
-
-  void RecordEvent(std::queue<std::pair<std::string, Event>>& event_queue,
-                   std::string name, gpuStream_t& stream);
-
-  Event RecordEvent(gpuStream_t& stream);
-
-  void ReleaseEvent(Event event);
-
-  void
-  WaitForEvents(std::queue<std::pair<std::string, Event>>& event_queue,
-                const std::vector<TensorTableEntry>& entries,
-                Timeline& timeline,
-                const std::function<void()>& error_check_callback = nullptr);
-
-  void ClearEvents(std::queue<std::pair<std::string, Event>>& event_queue,
-                   const std::vector<TensorTableEntry>& entries,
-                   Timeline& timeline,
-                   const std::function<void()>& error_check_callback = nullptr,
-                   bool elastic = false);
-  void StreamCreate(const TensorTableEntry& e, gpuStream_t& stream);
-  void StreamSynchronize(gpuStream_t stream);
+  void Finalize();
 
   template <typename ccl_fn_type>
   static decltype(auto) CallWithLock(std::mutex& lock, ccl_fn_type fn) {
@@ -86,20 +54,13 @@ public:
     return fn();
   }
 
-  // Thread pool for finalizer threads
-  ThreadPool finalizer_thread_pool;
-
   // base primitives
   std::vector<
       std::unordered_map<std::tuple<int32_t, std::vector<int32_t>>, ccl4hvd>>
       ccl_comms;
-  std::vector<std::unordered_map<int, gpuStream_t>> streams;
-  std::unordered_map<sycl::queue, std::queue<Event>> sycl_events;
-  // TODO(Maozhou): remove it when CCL_SYCL_OUTPUT_EVENT=1 is ready
-  std::unordered_map<sycl::event, std::shared_ptr<ccl::event>>
-      sycl_2_ccl_event_map;
 
   // ccl helpers knobs
+  // TODO(Maozhou): move to global_state when unified with CCL CPU?
   bool enable_cache;
 
   static std::mutex GlobalMutex;
@@ -113,15 +74,8 @@ public:
         communicator_type_(communicator_type){};
   ~CCLGPUOpContext();
 
-  // TODO(Maozhou): use the ones from GPUOpContext
-  void InitGPU(const std::vector<TensorTableEntry>& entries);
-  void InitGPUQueue(const std::vector<TensorTableEntry>& entries,
-                    const Response& response);
-  Status
-  FinalizeGPUQueue(std::vector<TensorTableEntry>& entries,
-                   ccl_data ccl_util_data, bool free_host_buffer = true,
-                   const std::function<void()>& error_check_callback = nullptr);
-  void InitCCLComm(const std::vector<TensorTableEntry>& entries,
+  void InitCCLComm(const gpuStream_t& stream,
+                   const std::vector<TensorTableEntry>& entries,
                    const std::vector<int32_t>& ccl_device_map);
 
   // helpers
@@ -131,13 +85,9 @@ public:
   ccl::stream& GetCCLStream(const TensorTableEntry& entry,
                             const std::vector<int32_t>& devices);
 
-  std::queue<std::pair<std::string, Event>> event_queue;
-  gpuStream_t stream;
-
-  void* host_buffer = nullptr;
-
   std::shared_ptr<ccl::kvs> kvs_;
 
+  // TODO(Maozhou): to confirm
   std::function<void()> error_check_callback_;
 
 private:
@@ -161,7 +111,7 @@ public:
                   Communicator communicator_type = Communicator::GLOBAL)
       : GPUAllreduce(gpu_context, global_state), ccl_context_(ccl_context),
         ccl_op_context_(ccl_context, global_state, communicator_type),
-        global_state_(global_state){};
+        global_state_(global_state) {}
 
   bool Enabled(const ParameterManager& param_manager,
                const std::vector<TensorTableEntry>& entries,
@@ -205,7 +155,7 @@ public:
                   Communicator communicator_type = Communicator::GLOBAL)
       : GPUBroadcast(gpu_context, global_state), ccl_context_(ccl_context),
         ccl_op_context_(ccl_context, global_state, communicator_type),
-        global_state_(global_state){};
+        global_state_(global_state) {}
 
   bool Enabled(const ParameterManager& param_manager,
                const std::vector<TensorTableEntry>& entries,
@@ -228,7 +178,7 @@ public:
                   Communicator communicator_type = Communicator::GLOBAL)
       : GPUAllgather(gpu_context, global_state), ccl_context_(ccl_context),
         ccl_op_context_(ccl_context, global_state, communicator_type),
-        global_state_(global_state){};
+        global_state_(global_state) {}
 
   bool Enabled(const ParameterManager& param_manager,
                const std::vector<TensorTableEntry>& entries,
@@ -245,7 +195,7 @@ protected:
                              const int64_t* const* entry_component_sizes,
                              const void* buffer_data, int element_size,
                              std::vector<TensorTableEntry>& entries) override;
-  
+
   void MemcpyEntryInFusionBuffer(const std::vector<TensorTableEntry>& entries,
                                  const TensorTableEntry& e,
                                  void* buffer_data_at_offset) override;
@@ -259,7 +209,7 @@ protected:
                         const Response& response,
                         int64_t**& entry_component_sizes,
                         int*& recvcounts) override;
-  
+
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
   CCLGPUContext* ccl_context_;
@@ -274,7 +224,7 @@ public:
                  Communicator communicator_type = Communicator::GLOBAL)
       : GPUAlltoall(gpu_context, global_state), ccl_context_(ccl_context),
         ccl_op_context_(ccl_context, global_state, communicator_type),
-        global_state_(global_state){};
+        global_state_(global_state) {}
 
   bool Enabled(const ParameterManager& param_manager,
                const std::vector<TensorTableEntry>& entries,
@@ -286,8 +236,7 @@ protected:
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
   template <typename T>
-  Status PrepareOutputAndParams(TensorTableEntry& e,
-                                std::vector<T>& sdispls,
+  Status PrepareOutputAndParams(TensorTableEntry& e, std::vector<T>& sdispls,
                                 std::vector<T>& rdispls,
                                 std::vector<T>& sendcounts,
                                 std::vector<T>& recvcounts) {
@@ -322,8 +271,8 @@ protected:
     }
 
     for (int i = 1; i < world_size; ++i) {
-      sdispls[i] = sdispls[i-1] + sendcounts[i-1];
-      rdispls[i] = rdispls[i-1] + recvcounts[i-1];
+      sdispls[i] = sdispls[i - 1] + sendcounts[i - 1];
+      rdispls[i] = rdispls[i - 1] + recvcounts[i - 1];
     }
 
     // Allocate output
@@ -333,9 +282,9 @@ protected:
 
     Status status = e.context->AllocateOutput(output_shape, &e.output);
     if (!status.ok()) {
-      LOG(WARNING)
-          << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate output: "
-          << status.reason();
+      LOG(WARNING) << "CCLGPUAlltoall::PrepareOutputAndParams failed to "
+                      "allocate output: "
+                   << status.reason();
       return status;
     }
 
@@ -343,12 +292,13 @@ protected:
     TensorShape received_splits_shape;
     received_splits_shape.AddDim(recvsplits.size());
 
-    Status rstatus = e.context->AllocateOutput(1, received_splits_shape,
-                                               &e.received_splits);
+    Status rstatus =
+        e.context->AllocateOutput(1, received_splits_shape, &e.received_splits);
     if (!rstatus.ok()) {
-      LOG(WARNING) << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate "
-                      "received_splits: "
-                   << status.reason();
+      LOG(WARNING)
+          << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate "
+             "received_splits: "
+          << status.reason();
       return rstatus;
     }
 
