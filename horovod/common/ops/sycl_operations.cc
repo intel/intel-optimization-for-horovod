@@ -180,30 +180,31 @@ public:
   void ScaleBufferImpl(const void* fused_input_data, void* buffer_data,
                        int64_t num_elements, double scale_factor,
                        DataType dtype, gpuStream_t& stream) {
+    auto float_scale_factor = (float)scale_factor;
     switch (dtype) {
     case HOROVOD_UINT8:
       ScaleBufferSyclImpl((const uint8_t*)fused_input_data,
-                          (uint8_t*)buffer_data, num_elements, scale_factor,
+                          (uint8_t*)buffer_data, num_elements, float_scale_factor,
                           stream);
       break;
     case HOROVOD_INT8:
       ScaleBufferSyclImpl((const int8_t*)fused_input_data, (int8_t*)buffer_data,
-                          num_elements, scale_factor, stream);
+                          num_elements, float_scale_factor, stream);
       break;
     case HOROVOD_INT32:
       ScaleBufferSyclImpl((const int32_t*)fused_input_data,
-                          (int32_t*)buffer_data, num_elements, scale_factor,
+                          (int32_t*)buffer_data, num_elements, float_scale_factor,
                           stream);
       break;
     case HOROVOD_INT64:
       ScaleBufferSyclImpl((const int64_t*)fused_input_data,
-                          (int64_t*)buffer_data, num_elements, scale_factor,
+                          (int64_t*)buffer_data, num_elements, float_scale_factor,
                           stream);
       break;
     case HOROVOD_FLOAT16:
       ScaleBufferSyclImpl((const sycl::half*)fused_input_data,
                           (sycl::half*)buffer_data, num_elements,
-                          (float)scale_factor, stream);
+                          float_scale_factor, stream);
       break;
     case HOROVOD_BFLOAT16:
       // TODO(Fengqing):bfloat16 is only supported by dpcpp,
@@ -211,11 +212,11 @@ public:
       using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
       ScaleBufferSyclImpl((const bfloat16*)fused_input_data,
                           (bfloat16*)buffer_data, num_elements,
-                          (float)scale_factor, stream);
+                          float_scale_factor, stream);
       break;
     case HOROVOD_FLOAT32:
       ScaleBufferSyclImpl((const float*)fused_input_data, (float*)buffer_data,
-                          num_elements, (float)scale_factor, stream);
+                          num_elements, float_scale_factor, stream);
       break;
     case HOROVOD_FLOAT64:
       ScaleBufferSyclImpl((const double*)fused_input_data, (double*)buffer_data,

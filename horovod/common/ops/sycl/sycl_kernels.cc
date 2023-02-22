@@ -124,38 +124,39 @@ void BatchedScaledD2DMemcpy(BatchedD2DParams params, void* fusion_buffer,
 void BatchedScaledD2DMemcpyInImpl(BatchedD2DParams& params, void* fusion_buffer,
                                   int num_copies, double scale_factor,
                                   DataType dtype, gpuStream_t stream) {
+  float float_scale_factor = (float)scale_factor;
   switch (dtype) {
   case HOROVOD_UINT8:
-    BatchedScaledD2DMemcpy<uint8_t, double>(params, fusion_buffer, num_copies,
-                                            scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<uint8_t, float>(params, fusion_buffer, num_copies,
+                                            float_scale_factor, stream, true);
     break;
   case HOROVOD_INT8:
-    BatchedScaledD2DMemcpy<int8_t, double>(params, fusion_buffer, num_copies,
-                                           scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<int8_t, float>(params, fusion_buffer, num_copies,
+                                           float_scale_factor, stream, true);
     break;
   case HOROVOD_INT32:
-    BatchedScaledD2DMemcpy<int32_t, double>(params, fusion_buffer, num_copies,
-                                            scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<int32_t, float>(params, fusion_buffer, num_copies,
+                                            float_scale_factor, stream, true);
     break;
   case HOROVOD_INT64:
-    BatchedScaledD2DMemcpy<int64_t, double>(params, fusion_buffer, num_copies,
-                                            scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<int64_t, float>(params, fusion_buffer, num_copies,
+                                            float_scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT16:
     BatchedScaledD2DMemcpy<sycl::half, float>(
-        params, fusion_buffer, num_copies, (float)scale_factor, stream, true);
+        params, fusion_buffer, num_copies, float_scale_factor, stream, true);
     break;
   case HOROVOD_BFLOAT16:
     BatchedScaledD2DMemcpy<bfloat16, float>(params, fusion_buffer, num_copies,
-                                            (float)scale_factor, stream, true);
+                                            float_scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT32:
     BatchedScaledD2DMemcpy<float, float>(params, fusion_buffer, num_copies,
-                                         (float)scale_factor, stream, true);
+                                         float_scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT64:
-    BatchedScaledD2DMemcpy<double, float>(params, fusion_buffer, num_copies,
-                                          (float)scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<double, double>(params, fusion_buffer, num_copies,
+                                          scale_factor, stream, true);
     break;
   default:
     throw std::logic_error("Type " + DataType_Name(dtype) +
@@ -167,38 +168,39 @@ void BatchedScaledD2DMemcpyOutImpl(BatchedD2DParams& params,
                                    void* fusion_buffer, int num_copies,
                                    double scale_factor, DataType dtype,
                                    gpuStream_t stream) {
+  float float_scale_factor = (float)scale_factor;
   switch (dtype) {
   case HOROVOD_UINT8:
-    BatchedScaledD2DMemcpy<uint8_t, double>(params, fusion_buffer, num_copies,
-                                            scale_factor, stream, false);
+    BatchedScaledD2DMemcpy<uint8_t, float>(params, fusion_buffer, num_copies,
+                                            float_scale_factor, stream, false);
     break;
   case HOROVOD_INT8:
-    BatchedScaledD2DMemcpy<int8_t, double>(params, fusion_buffer, num_copies,
-                                           scale_factor, stream, false);
+    BatchedScaledD2DMemcpy<int8_t, float>(params, fusion_buffer, num_copies,
+                                           float_scale_factor, stream, false);
     break;
   case HOROVOD_INT32:
-    BatchedScaledD2DMemcpy<int32_t, double>(params, fusion_buffer, num_copies,
-                                            scale_factor, stream, false);
+    BatchedScaledD2DMemcpy<int32_t, float>(params, fusion_buffer, num_copies,
+                                            float_scale_factor, stream, false);
     break;
   case HOROVOD_INT64:
-    BatchedScaledD2DMemcpy<int64_t, double>(params, fusion_buffer, num_copies,
-                                            scale_factor, stream, false);
+    BatchedScaledD2DMemcpy<int64_t, float>(params, fusion_buffer, num_copies,
+                                            float_scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT16:
     BatchedScaledD2DMemcpy<sycl::half, float>(
-        params, fusion_buffer, num_copies, (float)scale_factor, stream, false);
+        params, fusion_buffer, num_copies, float_scale_factor, stream, false);
     break;
   case HOROVOD_BFLOAT16:
     BatchedScaledD2DMemcpy<bfloat16, float>(params, fusion_buffer, num_copies,
-                                            (float)scale_factor, stream, false);
+                                            float_scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT32:
     BatchedScaledD2DMemcpy<float, float>(params, fusion_buffer, num_copies,
-                                         (float)scale_factor, stream, false);
+                                         float_scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT64:
-    BatchedScaledD2DMemcpy<double, float>(params, fusion_buffer, num_copies,
-                                          (float)scale_factor, stream, false);
+    BatchedScaledD2DMemcpy<double, double>(params, fusion_buffer, num_copies,
+                                          scale_factor, stream, false);
     break;
   default:
     throw std::logic_error("Type " + DataType_Name(dtype) +
