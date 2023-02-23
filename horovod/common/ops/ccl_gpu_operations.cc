@@ -890,5 +890,211 @@ void CCLGPUAlltoall::WaitForData(std::vector<TensorTableEntry>& entries) {
   }
 }
 
+Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
+                                  const Response& response) {
+  CheckTensorTableEntry(entries);
+  auto& first_entry = entries[0];
+  auto& process_set =
+      global_state_->process_set_table.Get(first_entry.process_set_id);
+
+  ccl_op_context_.InitGPU(entries);
+  ccl_op_context_.InitCCLComm(entries, response.devices());
+  ccl_op_context_.InitGPUQueue(entries, response);
+
+  WaitForData(entries);
+
+  size_t element_size = DataType_Size(first_entry.tensor->dtype());
+  const void* fused_input_data = nullptr;
+  void* buffer_data = nullptr;
+  int global_rank = process_set.controller->GetRank();
+  int global_size = process_set.controller->GetSize();
+  auto output_shapes = ComputeOutputShapes(entries, global_size);
+  std::vector<int> recvcounts = ComputeReceiveCounts(output_shapes);
+
+  global_state_->timeline.ActivityStartAll(entries, ALLOCATE_OUTPUT);
+  Status status = AllocateOutput(entries, output_shapes[global_rank]);
+  if (!status.ok()) {
+    return status;
+  }
+  global_state_->timeline.ActivityEndAll(entries);
+
+  // Copy memory into the fusion buffer.
+  if (entries.size() > 1) {
+    MemcpyInFusionBuffer(entries, output_shapes, element_size, buffer_data);
+    fused_input_data = buffer_data;
+
+    if (global_state_->timeline.Initialized()) {
+      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+                                MEMCPY_IN_FUSION_BUFFER,
+                                ccl_op_context_.stream);
+    }
+  } else {
+    fused_input_data = first_entry.tensor->data();
+    buffer_data = (void*)first_entry.output->data();
+  }
+
+  bool same_output_shape = (recvcounts.front() == recvcounts.back());
+
+  std::shared_ptr<ccl::event> ccl_event;
+  if (same_output_shape) {
+    // Do reducescatter.
+    LOG(DEBUG) << "Do CCLGPUReducescatter, number of elements: " << NumElements(entries)
+             << ", dtype: " << DataType_Name(first_entry.tensor->dtype());
+    CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
+      ccl_event = std::make_shared<ccl::event>(ccl::reduce_scatter(
+          fused_input_data, buffer_data,  recvcounts[0], 
+          GetCCLDataType(first_entry.tensor), ccl::reduction::sum,
+          ccl_op_context_.GetCCLComm(first_entry, response.devices()),
+          ccl_op_context_.GetCCLStream(first_entry, response.devices())));
+    });
+
+    if (global_state_->timeline.Initialized()) {
+      ccl_context_->RecordEvent(ccl_op_context_.event_queue, CCL_REDUCESCATTER,
+                                ccl_op_context_.stream);
+    }
+  } else {
+    // Simulate "ReduceScatterV" by an equivalent group of reduces.
+    // TODO(Pengfei): Assume oneCCL executes events in-order.
+    LOG(DEBUG) << "Simulate 'ReduceScatterV' by an equivalent group of reduces.";
+    size_t offset_bytes = 0;
+    for (int recv_rank = 0; recv_rank < global_size; ++recv_rank) {
+      const void* send_pointer =
+          reinterpret_cast<const int8_t*>(fused_input_data) + offset_bytes;
+
+      LOG(DEBUG) << "Receive rank: " << recv_rank << " receive count: " << recvcounts[recv_rank];
+      // What is the point of ccl_event???
+      CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
+        ccl_event = std::make_shared<ccl::event>(ccl::reduce(
+            send_pointer, buffer_data, recvcounts[recv_rank], 
+            GetCCLDataType(first_entry.tensor), ccl::reduction::sum, recv_rank,
+            ccl_op_context_.GetCCLComm(first_entry, response.devices()),
+            ccl_op_context_.GetCCLStream(first_entry, response.devices())));
+        });
+      
+      offset_bytes += recvcounts[recv_rank] * element_size;
+    }
+
+    if (global_state_->timeline.Initialized()) {
+      ccl_context_->RecordEvent(ccl_op_context_.event_queue, CCL_REDUCE,
+                                ccl_op_context_.stream);
+    }
+  }
+
+  // Copy memory out of the fusion buffer.
+  if (entries.size() > 1) {
+    MemcpyOutFusionBuffer(buffer_data, entries);
+
+    if (global_state_->timeline.Initialized()) {
+      ccl_context_->RecordEvent(ccl_op_context_.event_queue,
+                                MEMCPY_OUT_FUSION_BUFFER,
+                                ccl_op_context_.stream);
+    }
+  }
+
+  return ccl_op_context_.FinalizeGPUQueue(
+      entries, ccl_data{ccl_event}, true,
+      ccl_op_context_.error_check_callback_);
+}
+
+bool CCLGPUReducescatter::Enabled(const ParameterManager& param_manager,
+                                const std::vector<TensorTableEntry>& entries,
+                                const Response& response) const {
+  return ccl_op_context_.IsEnabled(entries);
+}
+
+Status CCLGPUReducescatter::AllocateOutput(
+    std::vector<TensorTableEntry>& entries, const std::vector<TensorShape>& output_shapes) {
+  for (size_t ec = 0; ec < entries.size(); ++ec) {
+    auto& e = entries[ec];
+    const auto& output_shape = output_shapes[ec];
+
+    Status status = e.context->AllocateOutput(e.output_index, output_shape,
+                                              &e.output);
+    if (!status.ok()) {
+      LOG(WARNING) << "CCLGPUReducescatter::AllocateOutput failed: "
+                   << status.reason();
+      return status;
+    }
+  }
+
+  return Status::OK();
+}
+
+void CCLGPUReducescatter::WaitForData(std::vector<TensorTableEntry>& entries) {
+  if (global_state_->timeline.Initialized()) {
+    // If timeline is initialized, need to use normal CPU syncing path
+    HorovodOp::WaitForData(entries);
+  } else {
+    // Push events to set to deduplicate entries
+    std::unordered_set<gpuEvent_t> event_set;
+    for (auto& e : entries) {
+      e.ready_event_list.PushEventsToSet(event_set);
+    }
+    // TODO(Maozhou): replace with barrier
+    for (auto ev : event_set) {
+      ev.wait();
+    }
+  }
+}
+
+void CCLGPUReducescatter::MemcpyEntryInFusionBuffer(const TensorTableEntry& e,
+                                        size_t entry_offset, size_t entry_size,
+                                        void* buffer_data_at_offset) {
+  void* tensor_data_at_offset = (uint8_t*)e.tensor->data() + entry_offset;
+  gpu_context_->MemcpyAsyncD2D(
+      buffer_data_at_offset, tensor_data_at_offset, entry_size,
+      ccl_context_->streams[global_state_->current_ccl_stream][e.device]);
+}
+
+void CCLGPUReducescatter::MemcpyEntryOutFusionBuffer(const void* buffer_data_at_offset,
+                                        TensorTableEntry& e) {
+  gpu_context_->MemcpyAsyncD2D(
+      (void*)e.output->data(), buffer_data_at_offset, (size_t)e.output->size(),
+      ccl_context_->streams[global_state_->current_ccl_stream][e.device]);
+}
+
+void CCLGPUReducescatter::MemcpyInFusionBuffer(
+    const std::vector<TensorTableEntry>& entries,
+    const std::vector<std::vector<TensorShape>>& output_shapes,
+    std::size_t element_size, void*& buffer_data) {
+  // TODO(IOH): Implement batch memory copy
+  // use the default ReducescatterOps implementation
+  // Access the fusion buffer.
+  auto& first_entry = entries[0];
+  auto buffer = global_state_->fusion_buffer.GetBuffer(
+      first_entry.device, first_entry.context->framework(),
+      global_state_->current_ccl_stream);
+  buffer_data = const_cast<void*>(buffer->AccessData(first_entry.context));
+
+  size_t buffer_offset = 0;
+  std::vector<size_t> entry_offsets(entries.size(), 0);
+
+  for (const auto& rank_shapes : output_shapes) {
+    for (size_t ec = 0; ec < entries.size(); ++ec) {
+      auto& e = entries[ec];
+      const auto& entry_shape = rank_shapes[ec];
+      auto entry_offset = entry_offsets[ec];
+      size_t entry_size = entry_shape.num_elements() * element_size;
+      void* buffer_data_at_offset = (uint8_t*)buffer_data + buffer_offset;
+      MemcpyEntryInFusionBuffer(e, entry_offset, entry_size,
+                                buffer_data_at_offset);
+      entry_offsets[ec] += entry_size;
+      buffer_offset += entry_size;
+    }
+  }
+}
+
+void CCLGPUReducescatter::MemcpyOutFusionBuffer(const void* buffer_data,
+                                    std::vector<TensorTableEntry>& entries) {
+  // TODO(IOH): Implement batch memory copy
+  // use the default ReducescatterOps implementation
+  int64_t offset = 0;
+  for (auto& e : entries) {
+    void* buffer_data_at_offset = (uint8_t*)buffer_data + offset;
+    MemcpyEntryOutFusionBuffer(buffer_data_at_offset, e);
+    offset += e.output->size();
+  }
+}
+
 } // namespace common
 } // namespace horovod

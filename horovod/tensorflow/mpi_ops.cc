@@ -1477,6 +1477,10 @@ REGISTER_KERNEL_BUILDER(Name("HorovodReducescatter").Device(DEVICE_CPU),
 #if HOROVOD_GPU_REDUCESCATTER
 REGISTER_KERNEL_BUILDER(Name("HorovodReducescatter").Device(DEVICE_GPU),
                         HorovodReducescatterOp);
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodReducescatter").Device(DEVICE_XPU),
+                        HorovodReducescatterOp);
+#endif
 #endif
 
 REGISTER_OP("HorovodReducescatter")
@@ -1618,6 +1622,10 @@ REGISTER_KERNEL_BUILDER(Name("HorovodGroupedReducescatter").Device(DEVICE_CPU),
 #if HOROVOD_GPU_REDUCESCATTER
 REGISTER_KERNEL_BUILDER(Name("HorovodGroupedReducescatter").Device(DEVICE_GPU),
                         HorovodGroupedReducescatterOp);
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodGroupedReducescatter").Device(DEVICE_XPU),
+                        HorovodGroupedReducescatterOp);
+#endif
 #endif
 
 REGISTER_OP("HorovodGroupedReducescatter")

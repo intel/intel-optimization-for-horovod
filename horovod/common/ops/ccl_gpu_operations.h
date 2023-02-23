@@ -314,6 +314,48 @@ protected:
   HorovodGlobalState* global_state_;
 };
 
+class CCLGPUReducescatter : public GPUReducescatter {
+public:
+  CCLGPUReducescatter(CCLGPUContext* ccl_context, GPUContext* gpu_context,
+                  HorovodGlobalState* global_state,
+                  Communicator communicator_type = Communicator::GLOBAL)
+      : GPUReducescatter(gpu_context, global_state), ccl_context_(ccl_context),
+        ccl_op_context_(ccl_context, global_state, communicator_type),
+        global_state_(global_state){}
+
+  Status Execute(std::vector<TensorTableEntry>& entries,
+                 const Response& response) override;
+
+  bool Enabled(const ParameterManager& param_manager,
+               const std::vector<TensorTableEntry>& entries,
+               const Response& response) const override;
+
+protected:
+  Status AllocateOutput(std::vector<TensorTableEntry>& entries,
+                        const std::vector<TensorShape>& output_shapes) override;
+
+  void WaitForData(std::vector<TensorTableEntry>& entries) override;
+
+  void MemcpyInFusionBuffer(
+    const std::vector<TensorTableEntry>& entries,
+    const std::vector<std::vector<TensorShape>>& output_shapes,
+    std::size_t element_size, void*& buffer_data) override;
+
+  void MemcpyOutFusionBuffer(const void* buffer_data,
+                                     std::vector<TensorTableEntry>& entries) override;
+
+  void MemcpyEntryInFusionBuffer(const TensorTableEntry& e,
+                                         size_t entry_offset, size_t entry_size,
+                                         void* buffer_data_at_offset) override;
+
+  void MemcpyEntryOutFusionBuffer(const void* buffer_data_at_offset,
+                                          TensorTableEntry& e) override;
+
+  CCLGPUContext* ccl_context_;
+  CCLGPUOpContext ccl_op_context_;
+  HorovodGlobalState* global_state_;
+};
+
 } // namespace common
 } // namespace horovod
 

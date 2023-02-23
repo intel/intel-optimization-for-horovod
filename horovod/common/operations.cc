@@ -255,6 +255,9 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
   if (HOROVOD_GPU_ALLTOALL == 'C')
     alltoall_ops.push_back(std::make_shared<CCLGPUAlltoall>(
         &ccl_gpu_context, &gpu_context, &state));
+  if (HOROVOD_GPU_REDUCESCATTER == 'C')
+    reducescatter_ops.push_back(std::make_shared<CCLGPUReducescatter>(
+        &ccl_gpu_context, &gpu_context, &state));  
 #else
   if (state.cpu_operation == LibType::CCL) {
     allreduce_ops.push_back(
