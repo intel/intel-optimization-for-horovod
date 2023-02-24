@@ -17,7 +17,13 @@
 
 // TODO(Fengqing):bfloat16 is only supported by dpcpp,
 // not a SYCL official solution.
+#if __has_include(<sycl/ext/oneapi/bfloat16.hpp>)
+using bfloat16 = sycl::ext::oneapi::bfloat16;
+#elif __has_include(<sycl/ext/oneapi/experimental/bfloat16.hpp>)
 using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
+#else
+#error "compiler unsupports bfloat16"
+#endif
 
 namespace horovod {
 namespace common {

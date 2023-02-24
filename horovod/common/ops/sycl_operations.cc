@@ -20,6 +20,16 @@
 #include <algorithm>
 #include <thread>
 
+// TODO(Fengqing):bfloat16 is only supported by dpcpp,
+// not a SYCL official solution.
+#if __has_include(<sycl/ext/oneapi/bfloat16.hpp>)
+using bfloat16 = sycl::ext::oneapi::bfloat16;
+#elif __has_include(<sycl/ext/oneapi/experimental/bfloat16.hpp>)
+using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
+#else
+#error "compiler unsupports bfloat16"
+#endif
+
 namespace horovod {
 namespace common {
 
@@ -213,9 +223,6 @@ public:
                           float_scale_factor, stream);
       break;
     case HOROVOD_BFLOAT16:
-      // TODO(Fengqing):bfloat16 is only supported by dpcpp,
-      // not a SYCL official solution.
-      using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
       ScaleBufferSyclImpl((const bfloat16*)fused_input_data,
                           (bfloat16*)buffer_data, num_elements,
                           float_scale_factor, stream);
