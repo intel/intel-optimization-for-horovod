@@ -71,9 +71,12 @@ endif()
 parse_version(${Pytorch_VERSION} VERSION_DEC)
 add_definitions(-DPYTORCH_VERSION=${VERSION_DEC} -DTORCH_API_INCLUDE_EXTENSION_H=1)
 set(Pytorch_CXX11 ${Pytorch_CXX11} PARENT_SCOPE)
-# TODO(IOH): do not break public hvd
 if(NOT Pytorch_VERSION VERSION_LESS "1.5.0")
-    set(CMAKE_CXX_STANDARD 17)
+    if (HAVE_DPCPP)
+        set(CMAKE_CXX_STANDARD 17)
+    else()
+        set(CMAKE_CXX_STANDARD 14)
+    endif ()
 endif()
 
 # PyTorch SOURCES

@@ -56,8 +56,8 @@ Build wheel and install
 ```bash
 $ rm -rf build/
 
-# You could build with it with single framework by changing HOROVOD_WITH_PYTORCH=0 or HOROVOD_WITH_TENSORFLOW=0
-$ I_MPI_CXX=dpcpp CXX=mpicxx LDSHARED="dpcpp -shared -fPIC" CC=icx HOROVOD_GPU=DPCPP \
+# You could build with it with single framework support by changing `HOROVOD_WITHOUT_PYTORCH=1` or `HOROVOD_WITHOUT_TENSORFLOW=1`
+$ CC=icx CXX=icpx HOROVOD_GPU=DPCPP \
 HOROVOD_WITHOUT_MXNET=1 HOROVOD_WITH_PYTORCH=1 HOROVOD_WITH_TENSORFLOW=1 \
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_GPU_OPERATIONS=CCL HOROVOD_WITH_MPI=1 \
 python setup.py bdist_wheel

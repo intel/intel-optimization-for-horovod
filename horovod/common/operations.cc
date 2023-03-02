@@ -1549,7 +1549,6 @@ EnqueueTensorAllreduces(std::vector<std::shared_ptr<OpContext>>& contexts,
     entries.push_back(std::move(e));
   }
 
-  // TODO(IOH): NVTX on oneCCL?
   // Start appropriate NVTX range
   if (tensors.size() == 1) {
     auto& e = entries[0];

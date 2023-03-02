@@ -460,7 +460,7 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
     auto device_context = context_->op_device_context();
 #if HAVE_SYCL
     auto q =
-        device_context ? this->SYCLQueue() : sycl::queue{sycl::gpu_selector{}};
+        device_context ? this->SYCLQueue() : sycl::queue(sycl::gpu_selector_v);
     ev = q.submit([&](sycl::handler& cgh) {
       constexpr uint8_t z = 0;
       cgh.memset(const_cast<void*>((*tensor)->data()), z, (*tensor)->size());

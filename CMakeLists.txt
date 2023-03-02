@@ -84,8 +84,6 @@ endif()
 
 # Add default project CXX flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -fPIC -Wall -ftree-vectorize")
-# TODO(IOH): clean extra options
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wformat -Wformat-security -Werror=format-security -fstack-protector -D_FORTIFY_SOURCE=1 -fstack-clash-protection")
 
 # RelWithDebInfo uses -O2, prefer performance over debug info in RelWithDebInfo build type
 string(REPLACE "-O2" "-O3" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
@@ -101,22 +99,6 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(CMAKE_MACOSX_RPATH TRUE)
 else()
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--version-script=${CMAKE_SOURCE_DIR}/horovod.lds -Wl,-Bsymbolic-functions -Wl,-z,relro,-z,now")
-endif()
-
-# Check for DPCPP
-# FIXME: temporary WA with I_MPI_CXX=dpcpp and CXX=mpicxx for the case when LD_LIBRARY_PATH contains CONDA_PREFIX/lib to enable HVD/Cmake find IMPI
-if(CMAKE_CXX_COMPILER MATCHES "mpicxx$")
-    set(CMAKE_CXX_STANDARD 17)
-    add_definitions(-DHAVE_SYCL=1)
-    set(HAVE_SYCL TRUE)
-    set(HAVE_DPCPP TRUE)
-endif()
-
-# oneCCL
-set(CCL_ROOT $ENV{CCL_ROOT})
-if(DEFINED CCL_ROOT)
-    set(HAVE_CCL TRUE)
-    set(USE_CCL TRUE)
 endif()
 
 # GPU Operations
@@ -166,6 +148,12 @@ if (NOT "$ENV{HOROVOD_WITHOUT_MPI}" STREQUAL "1")
         add_definitions(-DHAVE_MPI=1)
         set(HAVE_MPI TRUE)
     endif()
+endif()
+
+# oneCCL
+set(CCL_ROOT $ENV{CCL_ROOT})
+if(DEFINED CCL_ROOT)
+    set(USE_CCL TRUE)
 endif()
 
 # CUDA and ROCM
@@ -218,6 +206,34 @@ macro(ADD_CUDA)
     endif()
 endmacro()
 
+macro(ADD_DPCPP)
+    # Check for DPC++ compiler
+    if (CMAKE_CXX_COMPILER MATCHES "icpx|dpcpp")
+        add_definitions(-DHAVE_SYCL=1)
+        set(USE_SYCL TRUE)
+        set(HAVE_DPCPP TRUE)
+        if (CMAKE_CXX_COMPILER MATCHES "dpcpp")
+            message(DEPRECATION "use of 'CXX=dpcpp' is deprecated, please use 'CXX=icpx'.")
+        endif ()
+    else ()
+        message(FATAL_ERROR "HOROVOD_GPU type DPCPP requires intel DPC++ compiler.")
+    endif ()
+    if (NOT USE_CCL)
+        message(FATAL_ERROR "HOROVOD_GPU type DPCPP requries oneCCL, but it's not installed.")
+    endif ()
+    set(SYCL_COMPILE_FLAGS "-fsycl -fno-finite-math-only")
+    set(CMAKE_CXX_FLAGS "${SYCL_COMPILE_FLAGS} ${CMAKE_CXX_FLAGS}")
+    set(CMAKE_LDSHARED "-shared -fPIC")
+    add_definitions(-DHAVE_GPU=1)
+    set(USE_GPU_CCL TRUE)
+    list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl_operations.cc"
+                        "${PROJECT_SOURCE_DIR}/horovod/common/ops/gpu_operations.cc")
+    # TODO(IOH): move SYCL common files from DPCPP path
+    if (USE_SYCL)
+        list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl/sycl_kernels.cc")
+    endif ()
+endmacro()
+
 if(DEFINED HOROVOD_GPU_ALLREDUCE OR DEFINED HOROVOD_GPU_ALLGATHER OR DEFINED HOROVOD_GPU_BROADCAST OR DEFINED HOROVOD_GPU_ALLTOALL OR DEFINED HOROVOD_GPU_REDUCESCATTER)
     if(NOT DEFINED HOROVOD_GPU OR HOROVOD_GPU STREQUAL "CUDA")
         add_cuda()
@@ -231,26 +247,7 @@ if(DEFINED HOROVOD_GPU_ALLREDUCE OR DEFINED HOROVOD_GPU_ALLGATHER OR DEFINED HOR
         add_definitions(-DHAVE_ROCM=1 -DHAVE_GPU=1)
         set(HAVE_ROCM TRUE)
     elseif(HOROVOD_GPU STREQUAL "DPCPP")
-        if(NOT CMAKE_CXX_COMPILER MATCHES "mpicxx$")
-            message(FATAL_ERROR "HOROVOD_GPU type ${HOROVOD_GPU} requires DPC++ compiler (current workaround needs mpicxx as C++ compiler I_MPI_CXX=dpcpp CXX=mpicxx)")
-        else()
-            if(NOT HAVE_CCL)
-                message(FATAL_ERROR "HOROVOD_GPU type DPCPP requries CCL but CCL_ROOT was not set.")
-            endif()
-            if(NOT HAVE_DPCPP)
-                message(FATAL_ERROR "HOROVOD_GPU type DPCPP requires DPCPP.")
-            endif()
-            set(SYCL_COMPILE_FLAGS "-fno-finite-math-only")
-            set(CMAKE_CXX_FLAGS  "${SYCL_COMPILE_FLAGS} ${CMAKE_CXX_FLAGS}")
-            add_definitions(-DHAVE_GPU=1)
-            set(USE_GPU_CCL TRUE)
-            list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl_operations.cc"
-                                "${PROJECT_SOURCE_DIR}/horovod/common/ops/gpu_operations.cc")
-            # TODO(IOH): move SYCL common files from DPCPP path
-            if (HAVE_SYCL)
-                list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl/sycl_kernels.cc")
-            endif()
-        endif()
+        add_dpcpp()
     else()
         message(FATAL_ERROR "Unknown HOROVOD_GPU type: ${HOROVOD_GPU}")
     endif()
@@ -349,11 +346,10 @@ if(DEFINED HOROVOD_CPU_OPERATIONS)
     elseif(HOROVOD_CPU_OPERATIONS STREQUAL "MLSL")
         message(FATAL_ERROR "Intel(R) MLSL was removed. Upgrade to oneCCL and set HOROVOD_CPU_OPERATIONS=CCL.")
     elseif(HOROVOD_CPU_OPERATIONS STREQUAL "CCL")
-        if(NOT HAVE_CCL)
+        if(NOT USE_CCL)
             message(FATAL_ERROR "oneCCL is not installed, try changing HOROVOD_CPU_OPERATIONS.")
         endif()
         add_definitions(-DHOROVOD_CPU_OPERATIONS_DEFAULT=C)
-        set(USE_CCL TRUE)
     elseif(HOROVOD_CPU_OPERATIONS STREQUAL "GLOO")
         if(NOT HAVE_GLOO)
             message(FATAL_ERROR "Cannot set both HOROVOD_WITHOUT_GLOO and HOROVOD_CPU_OPERATIONS=GLOO.")
@@ -363,7 +359,7 @@ if(DEFINED HOROVOD_CPU_OPERATIONS)
 endif()
 
 # oneCCL
-if(HAVE_CCL AND USE_CCL)
+if(USE_CCL)
     set(CCL_CONFIGURATION $ENV{CCL_CONFIGURATION})
     include_directories(${CCL_ROOT}/include)
     list(APPEND LINKER_LIBS "${CCL_ROOT}/lib/${CCL_CONFIGURATION}/libccl.so")
@@ -396,10 +392,6 @@ endif()
 if(HAVE_ROCM)
     add_subdirectory(horovod/common/ops/rocm)
 endif()
-
-#if(HAVE_SYCL)
-#    add_subdirectory(horovod/common/ops/sycl)
-#endif()
 
 # if we need compatible c++ abi
 # Duplicate gloo folder and add it as a new sub-project
