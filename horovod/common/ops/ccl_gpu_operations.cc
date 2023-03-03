@@ -202,10 +202,6 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
     throw std::logic_error("Reduction op type not supported.");
   }
 
-  LOG(DEBUG) << "CCLGPUAllreduce::Execute"
-             << " final prescale_factor: " << prescale_factor
-             << " final postscale_factor: " << postscale_factor;
-
   const void* fused_input_data;
   void* buffer_data;
   size_t buffer_len;
@@ -550,7 +546,6 @@ void CCLGPUBroadcast::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    // TODO(Maozhou): replace with barrier
     for (auto ev : event_set) {
       ev.wait();
     }
@@ -1035,7 +1030,6 @@ void CCLGPUReducescatter::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    // TODO(Maozhou): replace with barrier
     for (auto ev : event_set) {
       ev.wait();
     }

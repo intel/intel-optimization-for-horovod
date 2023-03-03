@@ -33,6 +33,8 @@ using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
 namespace horovod {
 namespace common {
 
+template <typename T, typename TS> class ScaleBufferSyclKernel;
+
 class GPUContext::impl {
 public:
   int GetGpuEvent(Event* event, gpuStream_t& stream) {
@@ -65,8 +67,7 @@ public:
   }
 
   void ErrorCheck(std::string op_name, gpuError_t sycl_result) {
-    // TODO(Maozhou): TBD
-    throw std::runtime_error("Not implemented yet!");
+    throw std::logic_error("Not supported by SYCL.");
   }
 
   void RecordEvent(std::queue<std::pair<std::string, Event>>& event_queue,
@@ -149,14 +150,14 @@ public:
     stream->submit([&](sycl::handler& h) {
       sycl::range<1> global(num_workgroups * wg_size);
       sycl::range<1> local(wg_size);
-      h.parallel_for(sycl::nd_range<1>(global, local),
-                     [=](sycl::nd_item<1> it) {
-                       auto id = it.get_global_linear_id();
-                       if (id >= num_elements)
-                         return;
+      h.parallel_for<ScaleBufferSyclKernel<T, TS>>(
+          sycl::nd_range<1>(global, local), [=](sycl::nd_item<1> it) {
+            auto id = it.get_global_linear_id();
+            if (id >= num_elements)
+              return;
 
-                       output[id] = scale_factor * input[id];
-                     });
+            output[id] = scale_factor * input[id];
+          });
     });
   }
 
@@ -200,8 +201,8 @@ public:
     switch (dtype) {
     case HOROVOD_UINT8:
       ScaleBufferSyclImpl((const uint8_t*)fused_input_data,
-                          (uint8_t*)buffer_data, num_elements, float_scale_factor,
-                          stream);
+                          (uint8_t*)buffer_data, num_elements,
+                          float_scale_factor, stream);
       break;
     case HOROVOD_INT8:
       ScaleBufferSyclImpl((const int8_t*)fused_input_data, (int8_t*)buffer_data,
@@ -209,13 +210,13 @@ public:
       break;
     case HOROVOD_INT32:
       ScaleBufferSyclImpl((const int32_t*)fused_input_data,
-                          (int32_t*)buffer_data, num_elements, float_scale_factor,
-                          stream);
+                          (int32_t*)buffer_data, num_elements,
+                          float_scale_factor, stream);
       break;
     case HOROVOD_INT64:
       ScaleBufferSyclImpl((const int64_t*)fused_input_data,
-                          (int64_t*)buffer_data, num_elements, float_scale_factor,
-                          stream);
+                          (int64_t*)buffer_data, num_elements,
+                          float_scale_factor, stream);
       break;
     case HOROVOD_FLOAT16:
       ScaleBufferSyclImpl((const sycl::half*)fused_input_data,
@@ -242,9 +243,7 @@ public:
   }
 
 private:
-  // TODO(Maozhou): std::unordered_map<std::pair<int, cudaStream_t>,
-  // std::queue<Event>> cuda_events; ?
-  //  cache SYCL event object?
+  // TODO(Maozhou): reuse SYCL event object?
   std::unordered_map<sycl::queue, std::queue<Event>> sycl_events;
   std::mutex sycl_events_mutex;
 };

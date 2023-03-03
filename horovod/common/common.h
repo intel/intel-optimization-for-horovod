@@ -362,8 +362,7 @@ public:
   virtual Framework framework() const = 0;
   virtual ~OpContext() = default;
 #if HAVE_GPU && HAVE_SYCL
-  // TODO(Maozhou): move to GPU operations?
-  // return frameworks sycl-queue for given device
+  // return framework's stream for given device
   virtual sycl::queue SYCLQueue() const = 0;
 #endif
 };

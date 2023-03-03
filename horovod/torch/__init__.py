@@ -58,5 +58,5 @@ if _MPI_LIB_AVAILABLE:
 # Please run this function in a subprocess
 def _check_has_gpu():
     import torch
-    # TODO(Maozhou): confirm Python API changes
+    # TODO(IOH): confirm Python API changes
     return torch.cuda.is_available() or torch.xpu.is_available()

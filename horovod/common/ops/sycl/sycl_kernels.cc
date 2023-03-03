@@ -134,23 +134,23 @@ void BatchedScaledD2DMemcpyInImpl(BatchedD2DParams& params, void* fusion_buffer,
   switch (dtype) {
   case HOROVOD_UINT8:
     BatchedScaledD2DMemcpy<uint8_t, float>(params, fusion_buffer, num_copies,
-                                            float_scale_factor, stream, true);
+                                           float_scale_factor, stream, true);
     break;
   case HOROVOD_INT8:
     BatchedScaledD2DMemcpy<int8_t, float>(params, fusion_buffer, num_copies,
-                                           float_scale_factor, stream, true);
+                                          float_scale_factor, stream, true);
     break;
   case HOROVOD_INT32:
     BatchedScaledD2DMemcpy<int32_t, float>(params, fusion_buffer, num_copies,
-                                            float_scale_factor, stream, true);
+                                           float_scale_factor, stream, true);
     break;
   case HOROVOD_INT64:
     BatchedScaledD2DMemcpy<int64_t, float>(params, fusion_buffer, num_copies,
-                                            float_scale_factor, stream, true);
+                                           float_scale_factor, stream, true);
     break;
   case HOROVOD_FLOAT16:
-    BatchedScaledD2DMemcpy<sycl::half, float>(
-        params, fusion_buffer, num_copies, float_scale_factor, stream, true);
+    BatchedScaledD2DMemcpy<sycl::half, float>(params, fusion_buffer, num_copies,
+                                              float_scale_factor, stream, true);
     break;
   case HOROVOD_BFLOAT16:
     BatchedScaledD2DMemcpy<bfloat16, float>(params, fusion_buffer, num_copies,
@@ -162,7 +162,7 @@ void BatchedScaledD2DMemcpyInImpl(BatchedD2DParams& params, void* fusion_buffer,
     break;
   case HOROVOD_FLOAT64:
     BatchedScaledD2DMemcpy<double, double>(params, fusion_buffer, num_copies,
-                                          scale_factor, stream, true);
+                                           scale_factor, stream, true);
     break;
   default:
     throw std::logic_error("Type " + DataType_Name(dtype) +
@@ -178,19 +178,19 @@ void BatchedScaledD2DMemcpyOutImpl(BatchedD2DParams& params,
   switch (dtype) {
   case HOROVOD_UINT8:
     BatchedScaledD2DMemcpy<uint8_t, float>(params, fusion_buffer, num_copies,
-                                            float_scale_factor, stream, false);
+                                           float_scale_factor, stream, false);
     break;
   case HOROVOD_INT8:
     BatchedScaledD2DMemcpy<int8_t, float>(params, fusion_buffer, num_copies,
-                                           float_scale_factor, stream, false);
+                                          float_scale_factor, stream, false);
     break;
   case HOROVOD_INT32:
     BatchedScaledD2DMemcpy<int32_t, float>(params, fusion_buffer, num_copies,
-                                            float_scale_factor, stream, false);
+                                           float_scale_factor, stream, false);
     break;
   case HOROVOD_INT64:
     BatchedScaledD2DMemcpy<int64_t, float>(params, fusion_buffer, num_copies,
-                                            float_scale_factor, stream, false);
+                                           float_scale_factor, stream, false);
     break;
   case HOROVOD_FLOAT16:
     BatchedScaledD2DMemcpy<sycl::half, float>(
@@ -206,7 +206,7 @@ void BatchedScaledD2DMemcpyOutImpl(BatchedD2DParams& params,
     break;
   case HOROVOD_FLOAT64:
     BatchedScaledD2DMemcpy<double, double>(params, fusion_buffer, num_copies,
-                                          scale_factor, stream, false);
+                                           scale_factor, stream, false);
     break;
   default:
     throw std::logic_error("Type " + DataType_Name(dtype) +

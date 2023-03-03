@@ -55,7 +55,7 @@ public:
 
 private:
   int device_ = CPU_DEVICE_ID;
-  // TODO(Maozhou): == nullptr?
+  // sycl::event cannot be nullptr
   gpuEvent_t event_;
 #if HAVE_SYCL
   bool is_enabled;

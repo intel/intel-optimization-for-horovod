@@ -69,7 +69,6 @@ TorchPersistentBuffer::TorchPersistentBuffer(int device, int64_t size)
     tensor_ = ::torch::empty({size}, ::torch::device(::torch::kCPU).dtype(::torch::kByte));
   } else {
     tensor_ = ::torch::empty({size}, ::torch::device(KGPU).dtype(::torch::kByte));
-    // TODO(Maozhou): block Host?
 #if HAVE_GPU && !HAVE_SYCL
     // On GPU allocation is asynchronous, we need to wait for it to
     // complete.
@@ -168,7 +167,6 @@ Status TorchOpContext::AllocateOutput(int output_index, TensorShape shape,
   with_device device_context(output_devices_.at(output_index));
   outputs_.at(output_index).resize_(shape_vector);
   *tensor = std::make_shared<TorchTensor>(outputs_.at(output_index));
-  // TODO(Maozhou): block Host?
 #if HAVE_GPU && !HAVE_SYCL
   auto device_ = output_devices_.at(output_index);
   if (device_ != CPU_DEVICE_ID) {
@@ -194,7 +192,6 @@ Status TorchOpContext::AllocateZeros(int64_t num_elements, DataType dtype,
   ::torch::Tensor zero_tensor = ::torch::zeros(
       num_elements, ::torch::device(device_type).dtype(torch_data_type));
   *tensor = std::make_shared<TorchTensor>(zero_tensor);
-  // TODO(Maozhou): block Host?
 #if HAVE_GPU && !HAVE_SYCL
   if (device_ != CPU_DEVICE_ID) {
     // On GPU allocation is asynchronous, we need to wait for it to

@@ -71,7 +71,8 @@ TorchReadyEvent::~TorchReadyEvent() {
 #elif HAVE_SYCL
 TorchReadyEvent::TorchReadyEvent(int device) : device_(device) {
   ctx_ = new TorchOpContext(device_);
-  event_ = ctx_->SYCLQueue().ext_oneapi_submit_barrier();
+  auto stream = ctx_->SYCLQueue();
+  event_ = stream.ext_oneapi_submit_barrier();
 }
 
 TorchReadyEvent::~TorchReadyEvent() { delete ctx_; }
