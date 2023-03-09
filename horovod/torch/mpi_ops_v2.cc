@@ -1214,7 +1214,17 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_allgather_async_torch_HalfTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_FloatTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_DoubleTensor", &DoAllgather);
-#if HOROVOD_GPU_ALLGATHER && (HOROVOD_GPU_ALLGATHER != 'C')
+#if HOROVOD_GPU_ALLGATHER == 'C'
+  m.def("horovod_torch_allgather_async_torch_xpu_ByteTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_CharTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_ShortTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_IntTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_LongTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_HalfTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_FloatTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_DoubleTensor", &DoAllgather);
+  m.def("horovod_torch_allgather_async_torch_xpu_BFloat16Tensor", &DoAllgather);
+#elif HOROVOD_GPU_ALLGATHER
   m.def("horovod_torch_allgather_async_torch_cuda_ByteTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_cuda_CharTensor", &DoAllgather);
   m.def("horovod_torch_allgather_async_torch_cuda_ShortTensor", &DoAllgather);
@@ -1259,7 +1269,26 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
         &DoGroupedAllgather);
   m.def("horovod_torch_grouped_allgather_async_torch_DoubleTensor",
         &DoGroupedAllgather);
-#if HOROVOD_GPU_ALLGATHER
+#if HOROVOD_GPU_ALLGATHER == 'C'
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_ByteTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_CharTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_ShortTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_IntTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_LongTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_HalfTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_FloatTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_DoubleTensor",
+        &DoGroupedAllgather);
+  m.def("horovod_torch_grouped_allgather_async_torch_xpu_BFloat16Tensor",
+        &DoGroupedAllgather);  
+#elif HOROVOD_GPU_ALLGATHER
   m.def("horovod_torch_grouped_allgather_async_torch_cuda_ByteTensor",
         &DoGroupedAllgather);
   m.def("horovod_torch_grouped_allgather_async_torch_cuda_CharTensor",
@@ -1395,7 +1424,14 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
   m.def("horovod_torch_reducescatter_async_torch_HalfTensor", &DoReducescatter);
   m.def("horovod_torch_reducescatter_async_torch_FloatTensor", &DoReducescatter);
   m.def("horovod_torch_reducescatter_async_torch_DoubleTensor", &DoReducescatter);
-#if HOROVOD_GPU_REDUCESCATTER
+#if HOROVOD_GPU_REDUCESCATTER == 'C'
+  m.def("horovod_torch_reducescatter_async_torch_xpu_IntTensor", &DoReducescatter);
+  m.def("horovod_torch_reducescatter_async_torch_xpu_LongTensor", &DoReducescatter);
+  m.def("horovod_torch_reducescatter_async_torch_xpu_HalfTensor", &DoReducescatter);
+  m.def("horovod_torch_reducescatter_async_torch_xpu_FloatTensor", &DoReducescatter);
+  m.def("horovod_torch_reducescatter_async_torch_xpu_DoubleTensor", &DoReducescatter);
+  m.def("horovod_torch_reducescatter_async_torch_xpu_BFloat16Tensor", &DoReducescatter);
+#elif HOROVOD_GPU_REDUCESCATTER
   m.def("horovod_torch_reducescatter_async_torch_cuda_IntTensor", &DoReducescatter);
   m.def("horovod_torch_reducescatter_async_torch_cuda_LongTensor", &DoReducescatter);
   m.def("horovod_torch_reducescatter_async_torch_cuda_HalfTensor", &DoReducescatter);
@@ -1425,7 +1461,20 @@ PYBIND11_MODULE(mpi_lib_v2, m) {
         &DoGroupedReducescatter);
   m.def("horovod_torch_grouped_reducescatter_async_torch_DoubleTensor",
         &DoGroupedReducescatter);
-#if HOROVOD_GPU_REDUCESCATTER
+#if HOROVOD_GPU_REDUCESCATTER == 'C'
+  m.def("horovod_torch_grouped_reducescatter_async_torch_xpu_IntTensor",
+        &DoGroupedReducescatter);
+  m.def("horovod_torch_grouped_reducescatter_async_torch_xpu_LongTensor",
+        &DoGroupedReducescatter);
+  m.def("horovod_torch_grouped_reducescatter_async_torch_xpu_HalfTensor",
+        &DoGroupedReducescatter);
+  m.def("horovod_torch_grouped_reducescatter_async_torch_xpu_FloatTensor",
+        &DoGroupedReducescatter);
+  m.def("horovod_torch_grouped_reducescatter_async_torch_xpu_DoubleTensor",
+        &DoGroupedReducescatter);
+  m.def("horovod_torch_grouped_reducescatter_async_torch_xpu_BFloat16Tensor",
+        &DoGroupedReducescatter);
+#elif HOROVOD_GPU_REDUCESCATTER
   m.def("horovod_torch_grouped_reducescatter_async_torch_cuda_IntTensor",
         &DoGroupedReducescatter);
   m.def("horovod_torch_grouped_reducescatter_async_torch_cuda_LongTensor",

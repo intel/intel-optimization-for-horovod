@@ -1176,6 +1176,576 @@ class TorchTests(unittest.TestCase):
                             "gradient %s differs from expected %s, "
                             "error: %s" % (grad_out, expected, str(err)))
 
+    def test_horovod_allgather(self):
+        """Test that the allgather correctly gathers 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [torch.ByteTensor, torch.CharTensor, torch.ShortTensor,
+                  torch.IntTensor, torch.LongTensor, torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            tensor = torch.FloatTensor(*([17] * dim)).fill_(1).mul_(rank)
+            tensor = self.cast_and_place(tensor, dtype)
+            gathered = hvd.allgather(tensor)
+            tensor, gathered = self.convert_cpu_fp16_to_fp32(tensor, gathered)
+
+            assert list(gathered.shape) == [17 * size] + [17] * (dim - 1)
+
+            for i in range(size):
+                rank_tensor = gathered[i * 17:(i + 1) * 17]
+                assert list(rank_tensor.shape) == [17] * dim, \
+                    'hvd.allgather produces incorrect gathered shape'
+                assert rank_tensor.data.min() == i, 'hvd.allgather produces incorrect gathered tensor'
+                assert rank_tensor.data.max() == i, 'hvd.allgather produces incorrect gathered tensor'
+
+    def test_horovod_allgather_variable_size(self):
+        """Test that the allgather correctly gathers 1D, 2D, 3D tensors,
+        even if those tensors have different sizes along the first dim."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [torch.ByteTensor, torch.CharTensor, torch.ShortTensor,
+                  torch.IntTensor, torch.LongTensor, torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            # Support tests up to MPI Size of 35
+            if size > 35:
+                break
+
+            tensor_sizes = [17, 32, 81, 12, 15, 23, 22] * 5
+            tensor_sizes = tensor_sizes[:size]
+
+            tensor = torch.FloatTensor(
+                *([tensor_sizes[rank]] + [17] * (dim - 1))).fill_(1).mul_(rank)
+            tensor = self.cast_and_place(tensor, dtype)
+            gathered = hvd.allgather(tensor)
+            tensor, gathered = self.convert_cpu_fp16_to_fp32(tensor, gathered)
+
+            expected_size = sum(tensor_sizes)
+            assert list(gathered.shape) == [expected_size] + [17] * (dim - 1)
+
+            for i in range(size):
+                rank_size = [tensor_sizes[i]] + [17] * (dim - 1)
+                rank_tensor = gathered[sum(
+                    tensor_sizes[:i]):sum(tensor_sizes[:i + 1])]
+                assert list(rank_tensor.shape) == rank_size
+                assert rank_tensor.data.min() == i
+                assert rank_tensor.data.max() == i
+
+    def test_horovod_allgather_async_fused(self):
+        """Test that the allgather correctly gathers 1D, 2D, 3D tensors
+        with Tensor Fusion."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [torch.ByteTensor, torch.CharTensor, torch.ShortTensor,
+                  torch.IntTensor, torch.LongTensor, torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        tests = []
+        is_hvd_poll_false_once = False
+        for dtype, dim in itertools.product(dtypes, dims):
+            rank_shape = [17] * dim
+            tensor = torch.FloatTensor(*(rank_shape)).fill_(1).mul_(rank)
+            tensor = self.cast_and_place(tensor, dtype)
+            handle = hvd.allgather_async(tensor)
+            if not hvd.poll(handle):
+                is_hvd_poll_false_once = True
+            tests.append((handle, rank_shape))
+
+        # Make sure it's an asynchronous operation.
+        assert is_hvd_poll_false_once, 'hvd.poll() always returns True, not an async op?'
+
+        for handle, rank_shape in tests:
+            gathered = hvd.synchronize(handle)
+            gathered, = self.convert_cpu_fp16_to_fp32(gathered)
+
+            for i in range(size):
+                rank_tensor = gathered[i * 17:(i + 1) * 17]
+                assert list(rank_tensor.shape) == rank_shape, \
+                    'hvd.allgather produces incorrect gathered shape'
+                assert rank_tensor.data.min() == i, 'hvd.allgather produces incorrect gathered tensor'
+                assert rank_tensor.data.max() == i, 'hvd.allgather produces incorrect gathered tensor'
+
+    def test_horovod_allgather_grad(self):
+        """Test the correctness of the allgather gradient."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        # Only Tensors of floating point dtype can require gradients
+        dtypes = [torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            # Support tests up to MPI Size of 35
+            if size > 35:
+                break
+
+            tensor_sizes = [3, 2, 7, 4, 6, 8, 10] * 5
+            tensor_sizes = tensor_sizes[:size]
+
+            tensor = torch.FloatTensor(
+                *([tensor_sizes[rank]] + [17] * (dim - 1))).fill_(1).mul_(rank)
+            tensor = self.cast_and_place(tensor, dtype)
+            tensor.requires_grad_()
+
+            grad_list = []
+            for r, tensor_size in enumerate(tensor_sizes):
+                grad_list.append(self.cast_and_place(
+                    torch.ones([tensor_size] + [17] * (dim - 1)), dtype) * r)
+            # TODO: remove wa after CMPLRLLVM-45441 is fixed
+            # grad_ys = torch.cat(grad_list, dim=0)
+            grad_list_cpu = []
+            for g in grad_list:
+                grad_list_cpu.append(g.to('cpu'))
+            grad_ys = torch.cat(grad_list_cpu, dim=0).to("xpu:{}".format(hvd.local_rank()))
+
+            gathered = hvd.allgather(tensor)
+            gathered.backward(grad_ys)
+            grad_out = tensor.grad.data.cpu().numpy()
+
+            expected = np.ones(
+                [tensor_sizes[rank]] + [17] * (dim - 1)
+            ) * rank
+            err = np.linalg.norm(expected - grad_out)
+            self.assertLess(err, 0.00000001,
+                            "gradient %s differs from expected %s, "
+                            "error: %s" % (grad_out, expected, str(err)))
+
+    def test_horovod_grouped_allgather(self):
+        """Test that the grouped allgather correctly gathers 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [torch.ByteTensor, torch.CharTensor, torch.ShortTensor,
+                  torch.IntTensor, torch.LongTensor, torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            tensors = [torch.FloatTensor(
+                *([17] * dim)).fill_(1).mul_(rank) for _ in range(5)]
+            tensors = [self.cast_and_place(t, dtype) for t in tensors]
+            gathered = hvd.grouped_allgather(tensors)
+            tensors, gathered = zip(*[self.convert_cpu_fp16_to_fp32(t, g)
+                                      for t, g in zip(tensors, gathered)])
+
+            assert all(list(g.shape) == [17 * size] + [17] * (dim - 1)
+                       for g in gathered)
+
+            for g in gathered:
+                for i in range(size):
+                    rank_tensor = g[i * 17:(i + 1) * 17]
+                    assert list(rank_tensor.shape) == [17] * dim, \
+                        'hvd.grouped_allgather produces incorrect gathered shape'
+                    assert rank_tensor.data.min(
+                    ) == i, 'hvd.grouped_allgather produces incorrect gathered tensor'
+                    assert rank_tensor.data.max(
+                    ) == i, 'hvd.grouped_allgather produces incorrect gathered tensor'
+
+    def test_horovod_grouped_allgather_grad(self):
+        """Test the correctness of the grouped allgather gradient."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        # Only Tensors of floating point dtype can require gradients
+        dtypes = [torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            # Support tests up to MPI Size of 35
+            if size > 35:
+                break
+
+            tensor_sizes = [3, 2, 7, 4, 6, 8, 10] * 5
+            tensor_sizes = tensor_sizes[:size]
+
+            tensors = [torch.FloatTensor(
+                *([tensor_sizes[rank]] + [17] * (dim - 1))).fill_(1).mul_(rank) for _ in range(5)]
+            tensors = [self.cast_and_place(t, dtype) for t in tensors]
+            for t in tensors:
+                t.requires_grad_()
+
+            grad_list = []
+            for r, tensor_size in enumerate(tensor_sizes):
+                grad_list.append(self.cast_and_place(
+                    torch.ones([tensor_size] + [17] * (dim - 1)), dtype) * r)
+            # TODO: remove wa after CMPLRLLVM-45441 is fixed
+            # grad_ys = torch.cat(grad_list, dim=0)
+            grad_list_cpu = []
+            for g in grad_list:
+                grad_list_cpu.append(g.to('cpu'))
+            grad_ys = torch.cat(grad_list_cpu, dim=0).to("xpu:{}".format(hvd.local_rank()))
+                
+            gathered = hvd.grouped_allgather(tensors)
+            for g in gathered:
+                g.backward(grad_ys)
+            grads_out = [t.grad.data.cpu().numpy() for t in tensors]
+
+            expected = np.ones(
+                [tensor_sizes[rank]] + [17] * (dim - 1)
+            ) * rank
+            for go in grads_out:
+                err = np.linalg.norm(expected - go)
+                self.assertLess(err, 0.00000001,
+                                "gradient %s differs from expected %s, "
+                                "error: %s" % (go, expected, str(err)))
+    def test_horovod_reducescatter(self):
+        """Test that reducescatter correctly sums and scatters 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = [torch.IntTensor, torch.LongTensor,
+                  torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            tensor = self.cast_and_place(tensor, dtype)
+            summed = hvd.reducescatter(tensor, op=hvd.Sum)
+            tensor, summed = self.convert_cpu_fp16_to_fp32(tensor, summed)
+            expected = tensor[rank * 4:(rank + 1) * 4] * size
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
+                                      torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            assert list(summed.shape) == list(expected.shape)
+            max_difference = summed.data.sub(expected).max()
+            assert max_difference <= threshold, 'hvd.reducescatter produces incorrect results'
+
+    def test_horovod_reducescatter_average(self):
+        """Test that reducescatter correctly averages and scatters 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = [torch.IntTensor, torch.LongTensor,
+                  torch.FloatTensor, torch.DoubleTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            tensor = self.cast_and_place(tensor, dtype)
+            averaged = hvd.reducescatter(tensor, op=hvd.Average)
+            expected = tensor[rank * 4:(rank + 1) * 4]
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
+                                      torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            assert list(averaged.shape) == list(expected.shape)
+            max_difference = averaged.data.sub(expected).max()
+            assert max_difference <= threshold, 'hvd.reducescatter produces incorrect results'
+
+    def test_horovod_reducescatter_scalar_error(self):
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        scalar = self.cast_and_place(torch.tensor(rank), torch.FloatTensor)
+        with self.assertRaises((torch.FatalError, RuntimeError, hvd.HorovodInternalError)):
+            _ = hvd.reducescatter(scalar, op=hvd.Average)
+
+    def test_horovod_reducescatter_adasum(self):
+        """Test that the reducescatter raises an error if we use Adasum operation."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        size = hvd.size()
+        dtypes = [torch.IntTensor, torch.LongTensor,
+                  torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            tensor = self.cast_and_place(tensor, dtype)
+
+            try:
+                hvd.reducescatter(tensor, op=hvd.Adasum)
+                assert False, 'hvd.reducescatter did not throw error'
+            except (torch.FatalError, RuntimeError):
+                pass
+
+    def test_horovod_reducescatter_async_fused(self):
+        """Test that the reducescatter correctly sums 1D, 2D, 3D tensors"""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = [torch.IntTensor, torch.LongTensor,
+                  torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        tests = []
+        is_hvd_poll_false_once = False
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            tensor = self.cast_and_place(tensor, dtype)
+            handle = hvd.reducescatter_async(tensor, op=hvd.Sum)
+            if not hvd.poll(handle):
+                is_hvd_poll_false_once = True
+            tensor, = self.convert_cpu_fp16_to_fp32(tensor)
+            expected = tensor[rank * 4:(rank + 1) * 4] * size
+            tests.append((dtype, expected, handle))
+
+        # Make sure it's an asynchronous operation.
+        assert is_hvd_poll_false_once, 'hvd.poll() always returns True, not an async op?'
+
+        for dtype, expected, handle in tests:
+            summed = hvd.synchronize(handle)
+            summed, = self.convert_cpu_fp16_to_fp32(summed)
+            assert list(summed.shape) == list(expected.shape)
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
+                                      torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            max_difference = summed.sub(expected).max()
+            assert max_difference <= threshold, 'hvd.allreduce produces incorrect results'
+
+    def test_horovod_reducescatter_grad(self):
+        """Test the correctness of the reducescatter gradient."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        size = hvd.size()
+        # Only Tensors of floating point dtype can require gradients
+        dtypes = [torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            tensor = self.cast_and_place(tensor, dtype)
+            tensor.requires_grad_()
+            summed = hvd.reducescatter(tensor, op=hvd.Sum)
+
+            grad_shape = [4] + [size * 4] * (dim - 1)
+            summed.backward(self.cast_and_place(torch.ones(grad_shape), dtype))
+            grad_out = tensor.grad.data.cpu().numpy()
+
+            expected = np.ones([size * 4] * dim) * size
+            err = np.linalg.norm(expected - grad_out)
+            self.assertLess(err, 0.00000001,
+                            "gradient %s differs from expected %s, "
+                            "error: %s" % (grad_out, expected, str(err)))
+
+    def test_horovod_reducescatter_grad_average(self):
+        """Test the correctness of the reducescatter averaged gradient."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        size = hvd.size()
+        # Only Tensors of floating point dtype can require gradients
+        dtypes = [torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            tensor = self.cast_and_place(tensor, dtype)
+            tensor.requires_grad_()
+            summed = hvd.reducescatter(tensor, op=hvd.Average)
+
+            grad_shape = [4] + [size * 4] * (dim - 1)
+            summed.backward(self.cast_and_place(torch.ones(grad_shape), dtype))
+            grad_out = tensor.grad.data.cpu().numpy()
+
+            expected = np.ones([size * 4] * dim)
+            err = np.linalg.norm(expected - grad_out)
+            self.assertLess(err, 0.00000001,
+                            "gradient %s differs from expected %s, "
+                            "error: %s" % (grad_out, expected, str(err)))
+
+    def test_horovod_grouped_reducescatter(self):
+        """Test that grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = [torch.IntTensor, torch.LongTensor,
+                  torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensors = [torch.FloatTensor(
+                *([size * 4] * dim)).random_(-100, 100) for _ in range(5)]
+            tensors = [self.cast_and_place(t, dtype) for t in tensors]
+            summed = hvd.grouped_reducescatter(tensors, op=hvd.Sum)
+            tensors, summed = zip(*[self.convert_cpu_fp16_to_fp32(t, g)
+                                    for t, g in zip(tensors, summed)])
+            expected = [t[rank * 4:(rank + 1) * 4] * size for t in tensors]
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
+                                      torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            assert all([torch.allclose(t1, t2, threshold) for t1, t2 in zip(expected, summed)]), \
+                'hvd.grouped_reducescatter produces incorrect results'
+
+    def test_horovod_grouped_reducescatter_average(self):
+        """Test that grouped reducescatter correctly averages and scatters 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = [torch.IntTensor, torch.LongTensor,
+                  torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensors = [torch.FloatTensor(
+                *([size * 4] * dim)).random_(-100, 100) for _ in range(5)]
+            tensors = [self.cast_and_place(t, dtype) for t in tensors]
+            averaged = hvd.grouped_reducescatter(tensors, op=hvd.Average)
+            tensors, averaged = zip(*[self.convert_cpu_fp16_to_fp32(t, g)
+                                    for t, g in zip(tensors, averaged)])
+            expected = [t[rank * 4:(rank + 1) * 4] for t in tensors]
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
+                                      torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            assert all([torch.allclose(t1, t2, threshold) for t1, t2 in zip(expected, averaged)]), \
+                'hvd.grouped_reducescatter produces incorrect results for average'
+
+
+    def test_horovod_grouped_reducescatter_grad(self):
+        """Test the correctness of the grouped reducescatter gradient."""
+        # Only do this test if there are GPUs available.
+        if not torch.xpu.is_available():
+            self.skipTest("No GPUs available")
+
+        hvd.init()
+        size = hvd.size()
+        # Only Tensors of floating point dtype can require gradients
+        dtypes = [torch.FloatTensor, torch.DoubleTensor,
+                  torch.HalfTensor, torch.BFloat16Tensor]
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            torch.manual_seed(1234)
+            tensors = [torch.FloatTensor(
+                *([size * 4] * dim)).random_(-100, 100) for _ in range(5)]
+            tensors = [self.cast_and_place(tensor, dtype)
+                       for tensor in tensors]
+            for t in tensors:
+                t.requires_grad_()
+            summed = hvd.grouped_reducescatter(tensors, op=hvd.Sum)
+
+            grad_shape = [4] + [size * 4] * (dim - 1)
+            for s in summed:
+                s.backward(self.cast_and_place(torch.ones(grad_shape), dtype))
+            grads_out = [t.grad.data.cpu().numpy() for t in tensors]
+
+            expected = np.ones([size * 4] * dim) * size
+            for grad_out in grads_out:
+                err = np.linalg.norm(expected - grad_out)
+                self.assertLess(err, 0.00000001,
+                                "gradient %s differs from expected %s, "
+                                "error: %s" % (grad_out, expected, str(err)))
+
 
 if __name__ == "__main__":
     unittest.main()
