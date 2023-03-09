@@ -20,8 +20,8 @@
 #include <c10/cuda/CUDAException.h>
 #elif HAVE_SYCL
 #include <c10/core/impl/VirtualGuardImpl.h>
-#endif
-#endif
+#endif // HAVE_CUDA
+#endif // HAVE_GPU
 
 #include "adapter_v2.h"
 #include "device_util.h"
@@ -31,7 +31,7 @@
 #define KGPU ::torch::kXPU
 #elif HAVE_CUDA
 #define KGPU ::torch::kCUDA
-#endif
+#endif // HAVE_SYCL
 
 namespace horovod {
 namespace torch {
@@ -221,7 +221,7 @@ sycl::queue TorchOpContext::SYCLQueue() const {
   auto pFunc = PyObject_GetAttrString(pIpexModule, "current_stream");
   PyObject* pArgs = PyTuple_Pack(1, PyLong_FromLong(device_));
   PyObject *pResult = PyObject_CallObject(pFunc, pArgs);
-  // old intel_extension_for_pytorch version has no this attr 
+  // old intel_extension_for_pytorch version has no this attr
   if (1 != PyObject_HasAttrString(pResult, "sycl_queue")){
     throw std::runtime_error("the object has no attr 'sycl_queue', please update intel_extension_for_pytorch");
   }

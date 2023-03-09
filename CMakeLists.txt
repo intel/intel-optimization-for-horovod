@@ -150,6 +150,13 @@ if (NOT "$ENV{HOROVOD_WITHOUT_MPI}" STREQUAL "1")
     endif()
 endif()
 
+# Check for intel DPC++ compiler
+if (CMAKE_CXX_COMPILER MATCHES "icpx")
+    add_definitions(-DHAVE_SYCL=1)
+    set(USE_SYCL TRUE)
+    set(USE_DPCPP TRUE)
+endif ()
+
 # oneCCL
 set(CCL_ROOT $ENV{CCL_ROOT})
 if(DEFINED CCL_ROOT)
@@ -207,15 +214,7 @@ macro(ADD_CUDA)
 endmacro()
 
 macro(ADD_DPCPP)
-    # Check for DPC++ compiler
-    if (CMAKE_CXX_COMPILER MATCHES "icpx|dpcpp")
-        add_definitions(-DHAVE_SYCL=1)
-        set(USE_SYCL TRUE)
-        set(HAVE_DPCPP TRUE)
-        if (CMAKE_CXX_COMPILER MATCHES "dpcpp")
-            message(DEPRECATION "use of 'CXX=dpcpp' is deprecated, please use 'CXX=icpx'.")
-        endif ()
-    else ()
+    if (NOT USE_DPCPP)
         message(FATAL_ERROR "HOROVOD_GPU type DPCPP requires intel DPC++ compiler.")
     endif ()
     if (NOT USE_CCL)

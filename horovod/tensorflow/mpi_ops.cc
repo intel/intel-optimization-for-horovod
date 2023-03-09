@@ -300,7 +300,7 @@ TFPersistentBuffer::TFPersistentBuffer(OpKernelContext* context, int64_t size) {
   if (!status.ok()) {
     throw status;
   }
-  // TODO(Maozhou): async allocation?
+  // SYCL does not support async allocation
 #if HAVE_GPU && !HAVE_SYCL
   // On GPU allocation is asynchronous, we need to wait for it to
   // complete.

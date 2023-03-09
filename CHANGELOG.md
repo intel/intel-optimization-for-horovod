@@ -16,6 +16,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+## [v0.5.0] - YYYY-MM-DD
+
+### Added
+
+- Added support for additional reduction operations for `allreduce` (min, max, product) on intel GPU.
+- Added Alltoall, (Grouped)Allgather, (Grouped)Reducescatter operations for intel GPU.
+
+### Changed
+
+- Update build command: switch CXX compiler from `dpcpp` to `icpx`.
+- Code clean and refine.
+- Short-term work around: Casted prescale/postscale factor to float to support Intel® Data Center GPU Flex Series and Intel® Arc™ A-Series GPU.
+
+### Deprecated
+
+### Removed
+
+- Removed Bfloat16 head files for CPU.
+- Removed the dependency of `intel-extension-for-pytorch` at compilation stage. 
+
+### Fixed
+
+- Fixed `sycl::ext::oneapi::bfloat16` compatibility issue in new DPC++ compiler.
+- Fixed build error with TensorFlow 2.12.
+
 ## [v0.4.0] - 2023-01-06
 
 ### Added
