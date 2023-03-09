@@ -10,11 +10,6 @@
 #  Pytorch_CUDA
 #  Pytorch_ROCM
 #  Pytorch_CXX11
-# TODO(IOH): remove IPEX depends
-#  Pytorch_DPCPP
-#  Ipex_INCLUDE_DIRS
-#  Ipex_LINKER_LIBS
-#  Ipex_DEFINES
 
 # Compatible layer for CMake <3.12. Pytorch_ROOT will be accounted in for searching paths and libraries for CMake >=3.12.
 list(APPEND CMAKE_PREFIX_PATH ${Pytorch_ROOT})
@@ -73,23 +68,4 @@ else()
     set(Pytorch_COMPILE_FLAGS "${Pytorch_COMPILE_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
 endif()
 
-execute_process(COMMAND ${PY_EXE} -c "import intel_extension_for_pytorch as i; print(i.include_paths()[0]); print(i.library_paths()[0])" OUTPUT_VARIABLE ipex_OUTPUT RESULT_VARIABLE ipex_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
-string(REGEX REPLACE "\n" ";" ipex_OUTPUT "${ipex_OUTPUT}")
-list(LENGTH ipex_OUTPUT LEN)
-if (LEN EQUAL "2")
-    set(Pytorch_DPCPP 1)
-    set(Ipex_DEFINES "-DUSE_DPCPP=1")
-    list(GET ipex_OUTPUT 0 Ipex_INCLUDE_DIRS)
-    list(GET ipex_OUTPUT 1 tmp)
-    set(Ipex_LINKER_LIBS "${tmp}/libintel-ext-pt-gpu.so")
-    execute_process(COMMAND ${PY_EXE} -c "import pybind11 as p; print(p.get_include());" OUTPUT_VARIABLE pb11_OUTPUT RESULT_VARIABLE pb11_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(pb11_RESULT)
-        message(FATAL_ERROR "Horovod build with GPU and DPCPP requires pybind11.")
-    else()
-        list(APPEND Ipex_INCLUDE_DIRS ${pb11_OUTPUT})
-    endif()
-else()
-    set(Pytorch_DPCPP 0)
-endif()
-
-mark_as_advanced(Pytorch_INCLUDE_DIRS Pytorch_LIBRARY_DIRS Pytorch_LIBRARIES Pytorch_COMPILE_FLAGS Pytorch_VERSION Pytorch_CUDA Pytorch_ROCM Pytorch_CXX11 Ipex_INCLUDE_DIRS Ipex_LINKER_LIBS Pytorch_DPCPP Ipex_DEFINES)
+mark_as_advanced(Pytorch_INCLUDE_DIRS Pytorch_LIBRARY_DIRS Pytorch_LIBRARIES Pytorch_COMPILE_FLAGS Pytorch_VERSION Pytorch_CUDA Pytorch_ROCM Pytorch_CXX11)

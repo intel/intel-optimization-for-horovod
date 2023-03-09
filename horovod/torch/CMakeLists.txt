@@ -33,14 +33,6 @@ if (Pytorch_ROCM)
     execute_process(COMMAND ${PY_EXE} -c "from torch.utils import hipify; print(True) if hasattr(hipify, '__version__') else print(False)" OUTPUT_VARIABLE HIPIFY_HAS_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
-if (HAVE_DPCPP AND Pytorch_DPCPP)
-    add_definitions(${Ipex_DEFINES})
-    include_directories(${Ipex_INCLUDE_DIRS})
-    list(APPEND PYTORCH_LINKER_LIBS "${Ipex_LINKER_LIBS}")
-elseif(HAVE_DPCPP)
-    message(FATAL_ERROR "Horovod build with GPU support was requested but this PyTorch installation does not support DPCPP (ipex).")
-endif()
-
 include_directories(SYSTEM ${Pytorch_INCLUDE_DIRS})
 execute_process(COMMAND ${PY_EXE} -c "from distutils.sysconfig import get_python_inc; print(get_python_inc())"
                 OUTPUT_VARIABLE PYTHON_INCLUDE_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)

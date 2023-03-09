@@ -20,7 +20,6 @@
 #include <c10/cuda/CUDAException.h>
 #elif HAVE_SYCL
 #include <c10/core/impl/VirtualGuardImpl.h>
-#include <ipex.h>
 #endif
 #endif
 
@@ -212,8 +211,26 @@ sycl::queue TorchOpContext::SYCLQueue() const {
   ::torch::DeviceType device_type =
       device_ != CPU_DEVICE_ID ? KGPU : ::torch::kCPU;
   c10::impl::VirtualGuardImpl impl(device_type);
-  c10::Stream dpcpp_stream = impl.getStream(at::Device(device_type, device_));
-  return xpu::get_queue_from_stream(dpcpp_stream);
+
+  // TODO(Mingxiao): tmp solution, will call c++ api in future
+  PyGILState_STATE gstate;
+  /* aquire python thread */
+  gstate = PyGILState_Ensure();
+  auto pTorchModule = PyImport_ImportModule("torch");
+  auto pIpexModule = PyImport_ImportModule("intel_extension_for_pytorch.xpu");
+  auto pFunc = PyObject_GetAttrString(pIpexModule, "current_stream");
+  PyObject* pArgs = PyTuple_Pack(1, PyLong_FromLong(device_));
+  PyObject *pResult = PyObject_CallObject(pFunc, pArgs);
+  // old intel_extension_for_pytorch version has no this attr 
+  if (1 != PyObject_HasAttrString(pResult, "sycl_queue")){
+    throw std::runtime_error("the object has no attr 'sycl_queue', please update intel_extension_for_pytorch");
+  }
+  auto pQueue=PyObject_GetAttrString(pResult, (char*) "sycl_queue");
+  sycl::queue *qResult;
+  qResult= static_cast<sycl::queue *>(PyLong_AsVoidPtr(pQueue));
+  /* release python thread */
+  PyGILState_Release(gstate);
+  return *qResult;
 }
 #endif
 

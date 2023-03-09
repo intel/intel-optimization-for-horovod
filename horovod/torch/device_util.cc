@@ -21,7 +21,6 @@
 #include <c10/cuda/CUDAGuard.h>
 #elif HAVE_SYCL
 #include <c10/core/impl/VirtualGuardImpl.h>
-#include <ipex.h>
 #endif // HAVE_CUDA
 #else
 #include <stdexcept>

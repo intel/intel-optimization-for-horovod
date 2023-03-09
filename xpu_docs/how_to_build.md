@@ -15,22 +15,29 @@ $ pip install tensorflow==2.11.0
 $ pip install --upgrade intel-extension-for-tensorflow[gpu]
 ```
 
-### Intel® Extension for PyTorch*
+### Install PyTorch*
 ```bash
 $ python -m pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
+```
+
+Users have no need to install intel-extension-for-pytorch during compiling, but please install it for runtime.
+
+```bash
 $ python -m pip install intel_extension_for_pytorch==1.13.10+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
 ```
+
+To avoid imcompatibility issue, please try to build Intel® Extension for PyTorch* from source code if try latest Intel® Optimization for Horovod*. Check [Installation Guide](https://intel.github.io/intel-extension-for-pytorch/xpu/latest/tutorials/installation.html#install-via-compiling-from-source) for detailed information of Intel® Extension for PyTorch\* for Intel® GPUs. Source code is available at the [xpu-master branch](https://github.com/intel/intel-extension-for-pytorch/tree/xpu-master).
+
 
 ### Install oneAPI Base Toolkit
 
 Refer to [Install oneAPI Base Toolkit Packages](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.1/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)
 
-### Install CMake and pybind11
+### Install CMake
 
-To build Intel® Optimization for Horovod*, install CMake and pybind11(Only for Pytorch dependency).
+To build Intel® Optimization for Horovod*, install CMake.
 ```
 apt install cmake
-pip install pybind11 # Only for Pytorch
 ```
 
 ### Download the Intel® Optimization for Horovod* source code
