@@ -69,6 +69,7 @@ struct SP_Stream_st {
   explicit SP_Stream_st(gpuStream_t stream_h) : stream_handle(stream_h) {}
   gpuStream_t stream_handle;
 };
+#include "inplace_bcast_sycl_helper.h"
 #endif // HAVE_SYCL
 
 // Forward declaration of AsGpuStreamValue
@@ -1243,6 +1244,19 @@ private:
               any_failures_and_tensors_done) {
     const bool do_lock = true;
     const bool sparse = false;
+#if HAVE_GPU && HAVE_SYCL
+    // MaybeLockVariableInputMutexesInOrder<Device, T> has been fix now. However it
+    // uses Eigen::GPUDevice to copy tensor, and public Eigen not support XPU device now.
+    // We rewrite a version without template argument 'Device' directly using sycl::queue 
+    // to copy tensor to bypass Eigen . GetInputTensorFromVariable<Device, T>
+    // is also rewrited because of Eigen.
+    VariableInputLockHolder variable_lock = MaybeLockVariableInputMutexesInOrder<T>(
+                          context, do_lock, sparse, std::vector<int>{tensor_index});
+    variable_locks.push_back(std::move(variable_lock));
+    Tensor tensor;
+    TF_RETURN_IF_ERROR(GetInputTensorFromVariable<T>(
+        context, tensor_index, do_lock, sparse, &tensor));
+#else
     // Here we need to replicate the functionality provided by
     // MaybeLockVariableInputMutexesInOrder(). That function currently does
     // not work as intended for input_ids not starting at 0. See:
@@ -1268,6 +1282,7 @@ private:
     Tensor tensor;
     TF_RETURN_IF_ERROR(GetInputTensorFromVariable<Device, T>(
         context, tensor_index, do_lock, sparse, &tensor));
+#endif // HAVE_GPU && HAVE_SYCL
     Tensor* output = &tensor;
     MaybeForwardRefInputToRefOutput(context, tensor_index, tensor_index);
 
@@ -1338,7 +1353,11 @@ REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplace").Device(DEVICE_CPU),
 #if HOROVOD_GPU_BROADCAST
 REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplace").Device(DEVICE_GPU),
                         HorovodBroadcastInplaceOp<GPUDevice>);
-#endif
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplace").Device(DEVICE_XPU),
+                        HorovodBroadcastInplaceOp<GPUDevice>);
+#endif // HAVE_SYCL
+#endif // HOROVOD_GPU_BROADCAST
 
 REGISTER_OP("HorovodBroadcastInplace")
     .Attr(
@@ -1378,7 +1397,13 @@ REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplaceResource")
                             .Device(DEVICE_GPU)
                             .HostMemory("resources"),
                         HorovodBroadcastInplaceOp<GPUDevice>);
-#endif
+#if HAVE_SYCL
+REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplaceResource")
+                            .Device(DEVICE_XPU)
+                            .HostMemory("resources"),
+                        HorovodBroadcastInplaceOp<GPUDevice>);
+#endif // HAVE_SYCL
+#endif // HOROVOD_GPU_BROADCAST
 
 REGISTER_OP("HorovodBroadcastInplaceResource")
     .Attr("root_rank: int")

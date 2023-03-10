@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - Added support for additional reduction operations for `allreduce` (min, max, product) on intel GPU.
-- Added Alltoall, (Grouped)Allgather, (Grouped)Reducescatter operations for intel GPU.
+- Added Alltoall, (Grouped)Allgather, (Grouped)Reducescatter, BroadcastInplace(Resource) operations for intel GPU.
 
 ### Changed
 

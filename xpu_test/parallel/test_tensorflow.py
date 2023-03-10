@@ -1663,6 +1663,59 @@ class TensorFlowTests(BaseTensorFlowTests):
 
         hvd.broadcast_global_variables(root_rank=0)
 
+    def test_horovod_broadcast_inplace_gpu(self):
+        """Test that the inplace broadcast correctly broadcasts 1D, 2D, 3D variables on GPU."""
+        if version.parse(tf.__version__) < version.parse('2.6.0'):
+            self.skipTest("Custom Ops using resource variables only work with TF 2.6+")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        # This test does not apply if there is only one worker.
+        if size == 1:
+            self.skipTest("Only one worker available")
+
+        # dtypes that are supported both for variable assignments and by Horovod
+        dtypes = [tf.int64, tf.float16, tf.float32, tf.float64]
+        dims = [1, 2, 3]
+        root_ranks = list(range(size))
+        for use_resource in [False, True]:
+            if not use_resource and _executing_eagerly():
+                continue
+            for counter, (dtype, dim, root_rank) in enumerate(itertools.product(dtypes, dims, root_ranks)):
+                with tf.device("/xpu:0"):
+                    if dtype == tf.bool:
+                        initial_value = tf.cast((tf.ones([17] * dim) * rank) % 2, dtype)
+                    else:
+                        initial_value = tf.cast(tf.ones([17] * dim) * rank, dtype)
+                    root_tensor = tf.ones([17] * dim) * root_rank
+                    if dtype == tf.bool:
+                        root_tensor = root_tensor % 2
+                    if not hvd._executing_eagerly():
+                        if use_resource:
+                            var = resource_variable_ops.ResourceVariable(initial_value)
+                        else:
+                            var = tf_ops_variables.RefVariable(initial_value)
+                        init = tf.compat.v1.global_variables_initializer()
+                        self.evaluate(init)
+                    else:
+                        assert use_resource
+                        var = self.tfe.Variable(initial_value)
+                    broadcasted_tensor, = hvd.broadcast_([var], root_rank)
+                    self.assertEqual(var.dtype.base_dtype, dtype)
+                    self.assertEqual(broadcasted_tensor.dtype.base_dtype, dtype)
+                    np.testing.assert_array_equal(self.evaluate(broadcasted_tensor), self.evaluate(var),
+                                                  err_msg="broadcasted_var and var may not differ, actually they should have the same underlying buffer")
+                    self.assertTrue(
+                        self.evaluate(tf.reduce_all(tf.equal(
+                            tf.cast(root_tensor, tf.int32), tf.cast(broadcasted_tensor, tf.int32)))),
+                        "Inplace hvd.broadcast_ produces incorrect broadcasted variable value")
+
 
 from tensorflow.python.framework.test_util import run_all_in_graph_and_eager_modes
 run_all_in_graph_and_eager_modes(TensorFlowTests)
