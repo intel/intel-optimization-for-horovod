@@ -30,10 +30,12 @@ from tensorflow import keras
 from horovod.common.util import is_version_greater_equal_than
 
 if is_version_greater_equal_than(tf.__version__, "2.6.0"):
-    if version.parse(keras.__version__) < version.parse("2.9.0"):
+    if version.parse(keras.__version__.replace("-tf", "+tf")) < version.parse("2.9.0"):
         from keras.optimizer_v2 import optimizer_v2
-    else:
+    elif version.parse(keras.__version__.replace("-tf", "+tf")) < version.parse("2.12.0"):
         from keras.optimizers.optimizer_v2 import optimizer_v2
+    else:
+        from keras.optimizers.legacy import optimizer_v2
 else:
     from tensorflow.python.keras.optimizer_v2 import optimizer_v2
 
@@ -64,7 +66,7 @@ class Tf2KerasTests(tf.test.TestCase):
 
     def test_train_model_lr_schedule(self):
         initial_lr = 0.1 * hvd.size()
-        if version.parse(tf.keras.__version__) < version.parse("2.11"):
+        if version.parse(tf.keras.__version__.replace("-tf", "+tf")) < version.parse("2.11"):
             opt = tf.keras.optimizers.Adam()
         else:
             opt = tf.keras.optimizers.legacy.Adam()
@@ -157,10 +159,10 @@ class Tf2KerasTests(tf.test.TestCase):
 
     def test_sparse_as_dense_with_grad_aggregation(self):
         backward_passes_per_step = 2
-        if version.parse(keras.__version__) < version.parse("2.11"):
+        if version.parse(keras.__version__.replace("-tf", "+tf")) < version.parse("2.11"):
             opt = keras.optimizers.RMSprop(lr=0.0001)
         else:
-            opt = keras.optimizers.legacy.RMSprop(lr=0.0001)
+            opt = keras.optimizers.legacy.RMSprop(learning_rate=0.0001)
         opt = hvd.DistributedOptimizer(
             opt,
             sparse_as_dense=True,
@@ -186,7 +188,7 @@ class Tf2KerasTests(tf.test.TestCase):
     def test_grad_aggregation_with_inf_grad(self):
         backward_passes_per_step = 2
         step_count = tf.Variable(0, trainable=False, dtype=tf.int32)
-        if version.parse(tf.keras.__version__) < version.parse("2.11"):
+        if version.parse(tf.keras.__version__.replace("-tf", "+tf")) < version.parse("2.11"):
             opt = tf.keras.optimizers.SGD()
         else:
             opt = tf.keras.optimizers.legacy.SGD()
@@ -214,7 +216,7 @@ class Tf2KerasTests(tf.test.TestCase):
         assert tf.math.is_finite(grads_and_vars[0][0])
 
     def test_from_config(self):
-        if version.parse(keras.__version__) < version.parse("2.11"):
+        if version.parse(keras.__version__.replace("-tf", "+tf")) < version.parse("2.11"):
             opt = keras.optimizers.Adam()
         else:
             opt = keras.optimizers.legacy.Adam()
@@ -539,7 +541,7 @@ class Tf2KerasTests(tf.test.TestCase):
             model.add(tf.keras.layers.Dense(2, input_shape=(3,), kernel_initializer=initializer, bias_initializer=initializer))
             model.add(tf.keras.layers.RepeatVector(3))
             model.add(tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(3, kernel_initializer=initializer, bias_initializer=initializer)))
-            if version.parse(tf.keras.__version__) < version.parse("2.11"):
+            if version.parse(tf.keras.__version__.replace("-tf", "+tf")) < version.parse("2.11"):
                 opt = tf.keras.optimizers.Adam()
             else:
                 opt = tf.keras.optimizers.legacy.Adam()
