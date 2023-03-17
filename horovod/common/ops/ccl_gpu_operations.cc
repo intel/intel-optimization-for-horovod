@@ -96,12 +96,12 @@ void CCLGPUOpContext::InitCCLComm(const gpuStream_t& stream,
       if (!kvs_) {
         kvs_ = ccl::create_main_kvs();
         auto main_addr = kvs_->get_address();
-        global_state_->global_controller->Bcast(
+        process_set.controller->Bcast(
             (void*)main_addr.data(), main_addr.size(), 0, ccl_id_bcast_comm);
       }
     } else {
       ccl::kvs::address_type main_addr;
-      global_state_->global_controller->Bcast(
+      process_set.controller->Bcast(
           (void*)main_addr.data(), main_addr.size(), 0, Communicator::GLOBAL);
       kvs_ = ccl::create_kvs(main_addr);
     }
