@@ -21,7 +21,7 @@ import os
 import numpy as np
 import tensorflow as tf
 import horovod.tensorflow as hvd
-from intel_extension_for_tensorflow.python.test_func import test
+from tensorflow import test
 
 class AllReducePrecisionTests(test.TestCase):
     def random_uniform(self, *args, **kwargs):
