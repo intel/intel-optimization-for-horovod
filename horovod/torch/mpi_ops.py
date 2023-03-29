@@ -98,7 +98,7 @@ _handle_map = {}
 def _check_function(function_factory, tensor):
     function = function_factory(tensor)
     if not hasattr(mpi_lib, function):
-        raise ValueError('Tensor type %s is not supported (%s).' % (tensor.type(), function))
+        raise ValueError('Tensor type %s is not supported.' % tensor.type())
     if not tensor.is_contiguous() and not tensor.is_contiguous(memory_format=torch.channels_last):
         raise ValueError('Tensor is required to be contiguous, or channel_last')
     return function
