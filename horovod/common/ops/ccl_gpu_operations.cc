@@ -762,12 +762,18 @@ Status CCLGPUAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
     output_shape.AddDim((int64_t)total_entry_dimension_size);
     output_shape.AppendShape(single_slice_shape);
 
+    std::shared_ptr<ReadyEvent> event;
     Status status =
-        e.context->AllocateOutput(e.output_index, output_shape, &e.output);
+        e.context->AllocateOutput(e.output_index, output_shape, &e.output, &event);
     if (!status.ok()) {
       LOG(WARNING) << "CCLGPUAllgather::AllocateOutput failed: "
                    << status.reason();
       return status;
+    }
+
+    // Add event dependency for output allocation to stream
+    if (event) {
+      (*gpu_op_context_.stream)->ext_oneapi_submit_barrier({event->event()});
     }
   }
 
@@ -1008,12 +1014,18 @@ Status CCLGPUReducescatter::AllocateOutput(
     auto& e = entries[ec];
     const auto& output_shape = output_shapes[ec];
 
+    std::shared_ptr<ReadyEvent> event;
     Status status =
-        e.context->AllocateOutput(e.output_index, output_shape, &e.output);
+        e.context->AllocateOutput(e.output_index, output_shape, &e.output, &event);
     if (!status.ok()) {
       LOG(WARNING) << "CCLGPUReducescatter::AllocateOutput failed: "
                    << status.reason();
       return status;
+    }
+
+    // Add event dependency for output allocation to stream
+    if (event) {
+      (*gpu_op_context_.stream)->ext_oneapi_submit_barrier({event->event()});
     }
   }
 

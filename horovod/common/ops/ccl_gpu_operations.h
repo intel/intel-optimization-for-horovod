@@ -280,7 +280,8 @@ protected:
     output_shape.AddDim(output_first_dim);
     output_shape.AppendShape(slice_shape);
 
-    Status status = e.context->AllocateOutput(output_shape, &e.output);
+    std::shared_ptr<ReadyEvent> event;
+    Status status = e.context->AllocateOutput(output_shape, &e.output, &event);
     if (!status.ok()) {
       LOG(WARNING) << "CCLGPUAlltoall::PrepareOutputAndParams failed to "
                       "allocate output: "
@@ -288,18 +289,29 @@ protected:
       return status;
     }
 
+    // Add event dependency for output allocation to stream
+    if (event) {
+      (*gpu_op_context_.stream)->ext_oneapi_submit_barrier({event->event()});
+    }
+
     // Allocate and fill received_splits output
     TensorShape received_splits_shape;
     received_splits_shape.AddDim(recvsplits.size());
 
+    std::shared_ptr<ReadyEvent> revent;
     Status rstatus =
-        e.context->AllocateOutput(1, received_splits_shape, &e.received_splits);
+        e.context->AllocateOutput(1, received_splits_shape, &e.received_splits, &revent);
     if (!rstatus.ok()) {
       LOG(WARNING)
           << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate "
              "received_splits: "
           << status.reason();
       return rstatus;
+    }
+
+    // Add event dependency for received_splits allocation to stream
+    if (revent) {
+      (*gpu_op_context_.stream)->ext_oneapi_submit_barrier({revent->event()});
     }
 
     auto* target_pointer = reinterpret_cast<int32_t*>(

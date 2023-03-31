@@ -422,7 +422,7 @@ TFOpContext::AllocateOutput(int output_index, common::TensorShape shape,
   if (status.ok()) {
     *tensor = std::make_shared<TFTensor>(*tf_tensor);
   }
-#if HAVE_GPU && !HAVE_SYCL
+#if HAVE_GPU
   // On GPU allocation is asynchronous, we need to wait for it to
   // complete.
   auto device_context = context_->op_device_context();
