@@ -34,7 +34,6 @@ class AllReducePrecisionTests(test.TestCase):
 
     # verify fp32 by comparing with fp64
     def test_allreduce_gpu_fp32_precision(self):
-        os.environ["HOROVOD_BATCH_D2D_MEMCOPIES"] = "0"
         np.random.seed(1234)
         prescale_factor = np.random.uniform()
         postscale_factor = np.random.uniform()
@@ -49,22 +48,26 @@ class AllReducePrecisionTests(test.TestCase):
 
     # verify fp32 by comparing with fp64
     def test_allreduce_gpu_fp32_BatchD2DMemoryCopy_precision(self):
-        os.environ["HOROVOD_BATCH_D2D_MEMCOPIES"] = "1"
         np.random.seed(1234)
         prescale_factor = np.random.uniform()
         postscale_factor = np.random.uniform()
-        fp64_tensor = self.random_uniform(
+        fp64_tensors = []
+        fp32_tensors = []
+        for i in range(10):
+            fp64_tensor = self.random_uniform(
             [1000], -1, 1, dtype=tf.dtypes.float64)
-        fp64_reduced = hvd.mpi_ops._allreduce(fp64_tensor, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
-        
-        fp32_tensor = tf.cast(fp64_tensor, tf.dtypes.float32)
-        fp32_reduced = hvd.mpi_ops._allreduce(fp32_tensor, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+            fp64_tensors.append(fp64_tensor)
+            fp32_tensor = tf.cast(fp64_tensor, tf.dtypes.float32)
+            fp32_tensors.append(fp32_tensor)   
 
-        self.assertAllClose(fp64_reduced, fp32_reduced)
+        fp64_reduceds = hvd.mpi_ops._grouped_allreduce(fp64_tensors, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+        fp32_reduceds = hvd.mpi_ops._grouped_allreduce(fp32_tensors, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+        
+        for i in range(10):
+            self.assertAllClose(fp64_reduceds[i], fp32_reduceds[i])
 
     # verify fp16 by comparing with fp32
     def test_allreduce_gpu_fp16_precision(self):
-        os.environ["HOROVOD_BATCH_D2D_MEMCOPIES"] = "0"
         np.random.seed(1234)
         prescale_factor = np.random.uniform()
         postscale_factor = np.random.uniform()
@@ -80,23 +83,26 @@ class AllReducePrecisionTests(test.TestCase):
 
     # verify fp16 by comparing with fp32
     def test_allreduce_gpu_fp16_BatchD2DMemoryCopy_precision(self):
-        os.environ["HOROVOD_BATCH_D2D_MEMCOPIES"] = "1"
         np.random.seed(1234)
         prescale_factor = np.random.uniform()
         postscale_factor = np.random.uniform()
-        fp32_tensor = self.random_uniform(
+        fp32_tensors = []
+        fp16_tensors = []
+        for i in range(10):
+            fp32_tensor = self.random_uniform(
             [1000], -1, 1, dtype=tf.dtypes.float32)
-        fp32_reduced = hvd.mpi_ops._allreduce(fp32_tensor, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+            fp32_tensors.append(fp32_tensor)
+            fp16_tensor = tf.cast(fp32_tensor, tf.dtypes.float16)
+            fp16_tensors.append(fp16_tensor)   
 
-        fp16_tensor = tf.cast(fp32_tensor, tf.dtypes.float16)
-        fp16_reduced = hvd.mpi_ops._allreduce(fp16_tensor, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
-        fp16_reduced = tf.cast(fp16_reduced, tf.dtypes.float32)
+        fp32_reduceds = hvd.mpi_ops._grouped_allreduce(fp32_tensors, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+        fp16_reduceds = hvd.mpi_ops._grouped_allreduce(fp16_tensors, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
 
-        self.assertAllClose(fp32_reduced, fp16_reduced, rtol=1e-3, atol=1e-3)
+        for i in range(10):
+            self.assertAllClose(fp32_reduceds[i], fp16_reduceds[i], rtol=1e-3, atol=1e-3)
 
     # verify bf16 by comparing with fp32
     def test_allreduce_gpu_bf16_precision(self):
-        os.environ["HOROVOD_BATCH_D2D_MEMCOPIES"] = "0"
         np.random.seed(1234)
         prescale_factor = np.random.uniform()
         postscale_factor = np.random.uniform()
@@ -112,19 +118,23 @@ class AllReducePrecisionTests(test.TestCase):
 
     # verify bf16 by comparing with fp32
     def test_allreduce_gpu_bf16_BatchD2DMemoryCopy_precision(self):
-        os.environ["HOROVOD_BATCH_D2D_MEMCOPIES"] = "1"
         np.random.seed(1234)
         prescale_factor = np.random.uniform()
         postscale_factor = np.random.uniform()
-        fp32_tensor = self.random_uniform(
+        fp32_tensors = []
+        bf16_tensors = []
+        for i in range(10):
+            fp32_tensor = self.random_uniform(
             [1000], -1, 1, dtype=tf.dtypes.float32)
-        fp32_reduced = hvd.mpi_ops._allreduce(fp32_tensor, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
-        
-        bf16_tensor = tf.cast(fp32_tensor, tf.dtypes.bfloat16)
-        bf16_reduced = hvd.mpi_ops._allreduce(bf16_tensor, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
-        bf16_reduced = tf.cast(bf16_reduced, tf.dtypes.float32)
+            fp32_tensors.append(fp32_tensor)
+            bf16_tensor = tf.cast(fp32_tensor, tf.dtypes.bfloat16)
+            bf16_tensors.append(bf16_tensor)   
 
-        self.assertAllClose(fp32_reduced, bf16_reduced, rtol=1e-2, atol=1e-2)
+        fp32_reduceds = hvd.mpi_ops._grouped_allreduce(fp32_tensors, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+        bf16_reduceds = hvd.mpi_ops._grouped_allreduce(bf16_tensors, prescale_factor=prescale_factor, postscale_factor=postscale_factor)
+
+        for i in range(10):
+            self.assertAllClose(fp32_reduceds[i], bf16_reduceds[i], rtol=1e-2, atol=1e-2)
 
 from tensorflow.python.framework.test_util import run_all_in_graph_and_eager_modes
 run_all_in_graph_and_eager_modes(AllReducePrecisionTests)
