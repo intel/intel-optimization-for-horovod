@@ -267,7 +267,7 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
         fused_input_data, buffer_data, (size_t)num_elements,
         GetCCLDataType(first_entry.tensor), ccl_reduction_op,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr);
+        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr).wait();
   });
 
   if (global_state_->timeline.Initialized()) {
@@ -518,7 +518,7 @@ Status CCLGPUBroadcast::Execute(std::vector<TensorTableEntry>& entries,
             DataType_Size(first_entry.tensor->dtype()),
         ccl::datatype::int8, first_entry.root_rank,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr);
+        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr).wait();
   });
 
   if (global_state_->timeline.Initialized()) {
@@ -649,7 +649,7 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
         fused_input_data != nullptr ? (void*)fused_input_data : buffer_data,
         num_elements * element_size, buffer_data, rcounts, ccl::datatype::int8,
         ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()));
+        ccl_op_context_.GetCCLStream(first_entry, response.devices())).wait();
   });
 
   // Copy memory out of the fusion buffer.
@@ -863,7 +863,7 @@ Status CCLGPUAlltoall::Execute(std::vector<TensorTableEntry>& entries,
     ccl::alltoallv(sendbuf, sendcounts, buffer_data, recvcounts,
                    GetCCLDataType(e.tensor),
                    ccl_op_context_.GetCCLComm(e, response.devices()),
-                   ccl_op_context_.GetCCLStream(e, response.devices()));
+                   ccl_op_context_.GetCCLStream(e, response.devices())).wait();
   });
 
   if (global_state_->timeline.Initialized()) {
@@ -950,7 +950,7 @@ Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
           fused_input_data, buffer_data, recvcounts[0],
           GetCCLDataType(first_entry.tensor), ccl::reduction::sum,
           ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-          ccl_op_context_.GetCCLStream(first_entry, response.devices()));
+          ccl_op_context_.GetCCLStream(first_entry, response.devices())).wait();
     });
 
     if (global_state_->timeline.Initialized()) {
@@ -974,7 +974,7 @@ Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
             send_pointer, buffer_data, recvcounts[recv_rank],
             GetCCLDataType(first_entry.tensor), ccl::reduction::sum, recv_rank,
             ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-            ccl_op_context_.GetCCLStream(first_entry, response.devices()));
+            ccl_op_context_.GetCCLStream(first_entry, response.devices())).wait();
       });
 
       offset_bytes += recvcounts[recv_rank] * element_size;
