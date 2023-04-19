@@ -142,7 +142,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             summed = hvd.allreduce(tensor, average=False)
@@ -181,7 +181,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             averaged = hvd.allreduce(tensor, average=True)
@@ -269,7 +269,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensors = torch.FloatTensor(
                 size, *([17] * dim)).random_(minval, maxval)
             tensors = self.cast_and_place(tensors, dtype)
@@ -310,7 +310,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             multiplied = self.cast_and_place(tensor * size, dtype)
             tensor = self.cast_and_place(tensor, dtype)
@@ -353,7 +353,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             handle = hvd.allreduce_async(tensor, average=False)
@@ -408,7 +408,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             device = local_rank
             device = "xpu:{}".format(device)
@@ -452,7 +452,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             summed = hvd.allreduce(tensor, average=False,
@@ -512,7 +512,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensor = torch.FloatTensor(*([17] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             summed = hvd.allreduce(tensor, average=False,
@@ -651,7 +651,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensors = [torch.FloatTensor(
                 *([17] * dim)).random_(minval, maxval) for _ in range(5)]
             tensors = [self.cast_and_place(tensor, dtype)
@@ -693,7 +693,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
             tensors = [torch.FloatTensor(
                 *([17] * dim)).random_(minval, maxval) for _ in range(5)]
             tensors = [self.cast_and_place(tensor, dtype)
@@ -826,7 +826,7 @@ class TorchTests(unittest.TestCase):
             minval = -100
             if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
                 maxval = 1
-                minval = 0
+                minval = -1
 
             tensors = [torch.FloatTensor(
                 *([17] * dim)).random_(minval, maxval) for _ in range(5)]
@@ -1437,7 +1437,12 @@ class TorchTests(unittest.TestCase):
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
-            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            maxval = 100
+            minval = -100
+            if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
+                maxval = 1
+                minval = -1
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             summed = hvd.reducescatter(tensor, op=hvd.Sum)
             tensor, summed = self.convert_cpu_fp16_to_fp32(tensor, summed)
@@ -1473,7 +1478,12 @@ class TorchTests(unittest.TestCase):
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
-            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            maxval = 100
+            minval = -100
+            if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
+                maxval = 1
+                minval = -1
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             averaged = hvd.reducescatter(tensor, op=hvd.Average)
             expected = tensor[rank * 4:(rank + 1) * 4]
@@ -1545,7 +1555,12 @@ class TorchTests(unittest.TestCase):
         is_hvd_poll_false_once = False
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
-            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(-100, 100)
+            maxval = 100
+            minval = -100
+            if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
+                maxval = 1
+                minval = -1
+            tensor = torch.FloatTensor(*([size * 4] * dim)).random_(minval, maxval)
             tensor = self.cast_and_place(tensor, dtype)
             handle = hvd.reducescatter_async(tensor, op=hvd.Sum)
             if not hvd.poll(handle):
@@ -1650,8 +1665,13 @@ class TorchTests(unittest.TestCase):
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
+            maxval = 100
+            minval = -100
+            if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
+                maxval = 1
+                minval = -1
             tensors = [torch.FloatTensor(
-                *([size * 4] * dim)).random_(-100, 100) for _ in range(5)]
+                *([size * 4] * dim)).random_(minval, maxval) for _ in range(5)]
             tensors = [self.cast_and_place(t, dtype) for t in tensors]
             summed = hvd.grouped_reducescatter(tensors, op=hvd.Sum)
             tensors, summed = zip(*[self.convert_cpu_fp16_to_fp32(t, g)
@@ -1688,8 +1708,13 @@ class TorchTests(unittest.TestCase):
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
+            maxval = 100
+            minval = -100
+            if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
+                maxval = 1
+                minval = -1
             tensors = [torch.FloatTensor(
-                *([size * 4] * dim)).random_(-100, 100) for _ in range(5)]
+                *([size * 4] * dim)).random_(minval, maxval) for _ in range(5)]
             tensors = [self.cast_and_place(t, dtype) for t in tensors]
             averaged = hvd.grouped_reducescatter(tensors, op=hvd.Average)
             tensors, averaged = zip(*[self.convert_cpu_fp16_to_fp32(t, g)
