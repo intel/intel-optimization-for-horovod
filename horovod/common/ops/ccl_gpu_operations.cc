@@ -15,9 +15,6 @@
 
 #include "ccl_gpu_operations.h"
 
-// TODO(IOH): move to sycl_operations.cc
-#include "sycl/sycl_kernels.h"
-
 namespace horovod {
 namespace common {
 
@@ -96,13 +93,13 @@ void CCLGPUOpContext::InitCCLComm(const gpuStream_t& stream,
       if (!kvs_) {
         kvs_ = ccl::create_main_kvs();
         auto main_addr = kvs_->get_address();
-        process_set.controller->Bcast(
-            (void*)main_addr.data(), main_addr.size(), 0, ccl_id_bcast_comm);
+        process_set.controller->Bcast((void*)main_addr.data(), main_addr.size(),
+                                      0, ccl_id_bcast_comm);
       }
     } else {
       ccl::kvs::address_type main_addr;
-      process_set.controller->Bcast(
-          (void*)main_addr.data(), main_addr.size(), 0, Communicator::GLOBAL);
+      process_set.controller->Bcast((void*)main_addr.data(), main_addr.size(),
+                                    0, Communicator::GLOBAL);
       kvs_ = ccl::create_kvs(main_addr);
     }
 
@@ -294,170 +291,6 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
 
   return gpu_op_context_.FinalizeGPUQueue(
       entries, true, ccl_op_context_.error_check_callback_);
-}
-
-void CCLGPUAllreduce::ScaleMemcpyInFusionBuffer(
-    const std::vector<TensorTableEntry>& entries, const void*& fused_input_data,
-    void*& buffer_data, size_t& buffer_len, double scale_factor) {
-  auto& first_entry = entries[0];
-  // Access the fusion buffer.
-  auto buffer = global_state_->fusion_buffer.GetBuffer(
-      first_entry.device, first_entry.context->framework(),
-      global_state_->current_nccl_stream);
-  buffer_data = const_cast<void*>(buffer->AccessData(first_entry.context));
-  auto stream =
-      gpu_context_
-          ->streams[global_state_->current_nccl_stream][first_entry.device];
-
-  if (enableBatchedScaledD2DMemcpy(global_state_, entries)) {
-    buffer_len = 0;
-    int64_t offset = 0;
-    int idx = 0;
-    int count = 0;
-
-    BatchedD2DParams d2d_params;
-    for (auto& e : entries) {
-      auto tensor_elements =
-          e.tensor->size() / DataType_Size(e.tensor->dtype());
-      if (count == 0) {
-        offset = tensor_elements;
-      } else {
-        offset = d2d_params.offsets[count - 1] + tensor_elements;
-      }
-
-      if (offset >= UNSIGNED_INT32_MAX) {
-        BatchedScaledD2DMemcpyInImpl(d2d_params, buffer_data, count,
-                                     scale_factor, first_entry.tensor->dtype(),
-                                     stream);
-        count = 0;
-        offset = tensor_elements;
-      }
-
-      // Set small buffers and offsets
-      d2d_params.buffers[count] = const_cast<void*>(e.tensor->data());
-      d2d_params.offsets[count] = offset;
-      buffer_len += e.tensor->size();
-      idx++;
-      count++;
-
-      if (idx % BATCHED_D2D_CAPACITY == 0 || idx == entries.size()) {
-        BatchedScaledD2DMemcpyInImpl(d2d_params, buffer_data, count,
-                                     scale_factor, first_entry.tensor->dtype(),
-                                     stream);
-        count = 0;
-        offset = 0;
-      }
-    }
-  } else {
-    int64_t offset = 0;
-    for (auto& e : entries) {
-      void* buffer_data_at_offset = (uint8_t*)buffer_data + offset;
-      MemcpyEntryInFusionBuffer(entries, e, buffer_data_at_offset);
-      offset += e.tensor->size();
-    }
-    buffer_len = (size_t)offset;
-    int64_t num_elements =
-        buffer_len / DataType_Size(first_entry.tensor->dtype());
-    if (scale_factor != 1.0) {
-      ScaleBuffer(scale_factor, entries, buffer_data, buffer_data,
-                  num_elements);
-    }
-  }
-  // Set the input data to originate from the buffer.
-  fused_input_data = buffer_data;
-}
-
-void CCLGPUAllreduce::ScaleMemcpyOutFusionBuffer(
-    void* buffer_data, size_t buffer_len, double scale_factor,
-    std::vector<TensorTableEntry>& entries) {
-  auto& first_entry = entries[0];
-  auto stream =
-      gpu_context_
-          ->streams[global_state_->current_nccl_stream][first_entry.device];
-
-  if (enableBatchedScaledD2DMemcpy(global_state_, entries)) {
-    int64_t offset = 0;
-    int idx = 0;
-    int count = 0;
-
-    BatchedD2DParams d2d_params;
-    for (auto& e : entries) {
-      auto tensor_elements =
-          e.output->size() / DataType_Size(e.output->dtype());
-      if (count == 0) {
-        offset = tensor_elements;
-      } else {
-        offset = d2d_params.offsets[count - 1] + tensor_elements;
-      }
-
-      if (tensor_elements >= UNSIGNED_INT32_MAX) {
-        BatchedScaledD2DMemcpyOutImpl(d2d_params, buffer_data, count,
-                                      scale_factor, first_entry.tensor->dtype(),
-                                      stream);
-        count = 0;
-        offset = tensor_elements;
-      }
-
-      // Set input/output pointers and sizes
-      d2d_params.buffers[count] = const_cast<void*>(e.output->data());
-      d2d_params.offsets[count] = offset;
-      idx++;
-      count++;
-
-      if (idx % BATCHED_D2D_CAPACITY == 0 || idx == entries.size()) {
-        // Perform batched d2d memcpy
-        BatchedScaledD2DMemcpyOutImpl(d2d_params, buffer_data, count,
-                                      scale_factor, first_entry.tensor->dtype(),
-                                      stream);
-        count = 0;
-        offset = 0;
-      }
-    }
-  } else {
-    int64_t num_elements =
-        buffer_len / DataType_Size(first_entry.tensor->dtype());
-    if (scale_factor != 1.0) {
-      ScaleBuffer(scale_factor, entries, buffer_data, buffer_data,
-                  num_elements);
-    }
-    int64_t offset = 0;
-    for (auto& e : entries) {
-      void* buffer_data_at_offset = (uint8_t*)buffer_data + offset;
-      MemcpyEntryOutFusionBuffer(entries, buffer_data_at_offset, e);
-      offset += e.tensor->size();
-    }
-  }
-}
-
-void CCLGPUAllreduce::MemcpyEntryInFusionBuffer(
-    const std::vector<TensorTableEntry>& entries, const TensorTableEntry& e,
-    void* buffer_data_at_offset) {
-  auto& first_entry = entries[0];
-  gpu_context_->MemcpyAsyncD2D(
-      buffer_data_at_offset, e.tensor->data(), (size_t)e.tensor->size(),
-      gpu_context_
-          ->streams[global_state_->current_nccl_stream][first_entry.device]);
-}
-
-void CCLGPUAllreduce::MemcpyEntryOutFusionBuffer(
-    const std::vector<TensorTableEntry>& entries,
-    const void* buffer_data_at_offset, TensorTableEntry& e) {
-  auto& first_entry = entries[0];
-  gpu_context_->MemcpyAsyncD2D(
-      (void*)e.output->data(), buffer_data_at_offset, (size_t)e.tensor->size(),
-      gpu_context_
-          ->streams[global_state_->current_nccl_stream][first_entry.device]);
-}
-
-void CCLGPUAllreduce::ScaleBuffer(double scale_factor,
-                                  const std::vector<TensorTableEntry>& entries,
-                                  const void* fused_input_data,
-                                  void* buffer_data, int64_t num_elements) {
-  gpu_context_->ScaleBufferImpl(
-      fused_input_data, buffer_data, num_elements, scale_factor,
-      entries[0].tensor->dtype(),
-      gpu_context_
-          ->streams[global_state_->current_nccl_stream][entries[0].device]);
 }
 
 bool CCLGPUAllreduce::Enabled(const ParameterManager& param_manager,
@@ -763,8 +596,8 @@ Status CCLGPUAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
     output_shape.AppendShape(single_slice_shape);
 
     std::shared_ptr<ReadyEvent> event;
-    Status status =
-        e.context->AllocateOutput(e.output_index, output_shape, &e.output, &event);
+    Status status = e.context->AllocateOutput(e.output_index, output_shape,
+                                              &e.output, &event);
     if (!status.ok()) {
       LOG(WARNING) << "CCLGPUAllgather::AllocateOutput failed: "
                    << status.reason();
@@ -1015,8 +848,8 @@ Status CCLGPUReducescatter::AllocateOutput(
     const auto& output_shape = output_shapes[ec];
 
     std::shared_ptr<ReadyEvent> event;
-    Status status =
-        e.context->AllocateOutput(e.output_index, output_shape, &e.output, &event);
+    Status status = e.context->AllocateOutput(e.output_index, output_shape,
+                                              &e.output, &event);
     if (!status.ok()) {
       LOG(WARNING) << "CCLGPUReducescatter::AllocateOutput failed: "
                    << status.reason();

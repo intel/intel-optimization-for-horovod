@@ -20,29 +20,25 @@
 #include "../../global_state.h"
 #include "../../message.h"
 
-#define BATCHED_D2D_CAPACITY 162
-#define UNSIGNED_INT32_MAX std::numeric_limits<uint32_t>::max()
+#define BATCHED_D2D_CAPACITY 80
+#define BATCHED_D2D_PADDING 1
 
 namespace horovod {
 namespace common {
 
 struct BatchedD2DParams {
-  void* buffers[BATCHED_D2D_CAPACITY];
-  uint32_t offsets[BATCHED_D2D_CAPACITY];
+  void* out[BATCHED_D2D_CAPACITY];
+  void* in[BATCHED_D2D_CAPACITY];
+  size_t sizes[BATCHED_D2D_CAPACITY];
 };
 
 // Performs a batched d2d memcopy
-void BatchedScaledD2DMemcpyInImpl(BatchedD2DParams& params, void* fusion_buffer,
-                                  int num_copies, double scale_factor,
-                                  DataType dtype, gpuStream_t stream);
+void BatchedD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
+                              gpuStream_t stream);
 
-void BatchedScaledD2DMemcpyOutImpl(BatchedD2DParams& params,
-                                   void* fusion_buffer, int num_copies,
-                                   double scale_factor, DataType dtype,
-                                   gpuStream_t stream);
-
-bool enableBatchedScaledD2DMemcpy(HorovodGlobalState* global_state,
-                                  const std::vector<TensorTableEntry>& entries);
+void BatchedScaledD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
+                                    double scale_factor, DataType dtype,
+                                    gpuStream_t stream);
 } // namespace common
 } // namespace horovod
 

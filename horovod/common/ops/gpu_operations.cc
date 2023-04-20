@@ -162,7 +162,6 @@ bool GPUAllreduce::Enabled(const ParameterManager& param_manager,
   return entries[0].device != CPU_DEVICE_ID;
 }
 
-#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::MemcpyInFusionBuffer(
     const std::vector<TensorTableEntry>& entries, const void*& fused_input_data,
     void*& buffer_data, size_t& buffer_len) {
@@ -206,6 +205,11 @@ void GPUAllreduce::MemcpyInFusionBuffer(
             d2d_params, count,
             gpu_context_->streams[global_state_->current_nccl_stream]
                                  [first_entry.device]);
+#elif HAVE_SYCL
+        BatchedD2DMemcpySYCLImpl(
+            d2d_params, count,
+            gpu_context_->streams[global_state_->current_nccl_stream]
+                                 [first_entry.device]);
 #endif
         // TODO: https://github.com/horovod/horovod/issues/2230
         // gpu_context_->ErrorCheck("BatchedD2DMemcpyCudaImpl",
@@ -229,9 +233,7 @@ void GPUAllreduce::MemcpyInFusionBuffer(
   // Set the input data to originate from the buffer.
   fused_input_data = buffer_data;
 }
-#endif
 
-#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::ScaleMemcpyInFusionBuffer(
     const std::vector<TensorTableEntry>& entries, const void*& fused_input_data,
     void*& buffer_data, size_t& buffer_len, double scale_factor) {
@@ -274,6 +276,11 @@ void GPUAllreduce::ScaleMemcpyInFusionBuffer(
             d2d_params, count, scale_factor, first_entry.tensor->dtype(),
             gpu_context_->streams[global_state_->current_nccl_stream]
                                  [first_entry.device]);
+#elif HAVE_SYCL
+        BatchedScaledD2DMemcpySYCLImpl(
+            d2d_params, count, scale_factor, first_entry.tensor->dtype(),
+            gpu_context_->streams[global_state_->current_nccl_stream]
+                                 [first_entry.device]);
 #endif
         // TODO: https://github.com/horovod/horovod/issues/2230
         // gpu_context_->ErrorCheck("BatchedScaledD2DMemcpyCudaImpl",
@@ -303,7 +310,6 @@ void GPUAllreduce::ScaleMemcpyInFusionBuffer(
   // Set the input data to originate from the buffer.
   fused_input_data = buffer_data;
 }
-#endif
 
 void GPUAllreduce::MemcpyEntryInFusionBuffer(
     const std::vector<TensorTableEntry>& entries, const TensorTableEntry& e,
@@ -315,7 +321,6 @@ void GPUAllreduce::MemcpyEntryInFusionBuffer(
           ->streams[global_state_->current_nccl_stream][first_entry.device]);
 }
 
-#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::MemcpyOutFusionBuffer(
     const void* buffer_data, std::vector<TensorTableEntry>& entries) {
   if (global_state_->batch_d2d_memcopies) {
@@ -351,6 +356,11 @@ void GPUAllreduce::MemcpyOutFusionBuffer(
             d2d_params, count,
             gpu_context_->streams[global_state_->current_nccl_stream]
                                  [first_entry.device]);
+#elif HAVE_SYCL
+        BatchedD2DMemcpySYCLImpl(
+            d2d_params, count,
+            gpu_context_->streams[global_state_->current_nccl_stream]
+                                 [first_entry.device]);
 #endif
         // TODO: https://github.com/horovod/horovod/issues/2230
         // gpu_context_->ErrorCheck("BatchedD2DMemcpyCudaImpl",
@@ -368,9 +378,7 @@ void GPUAllreduce::MemcpyOutFusionBuffer(
     }
   }
 }
-#endif
 
-#if HAVE_GPU && !HAVE_SYCL
 void GPUAllreduce::ScaleMemcpyOutFusionBuffer(
     void* buffer_data, size_t buffer_len, double scale_factor,
     std::vector<TensorTableEntry>& entries) {
@@ -408,6 +416,11 @@ void GPUAllreduce::ScaleMemcpyOutFusionBuffer(
             d2d_params, count, scale_factor, first_entry.tensor->dtype(),
             gpu_context_->streams[global_state_->current_nccl_stream]
                                  [first_entry.device]);
+#elif HAVE_SYCL
+        BatchedScaledD2DMemcpySYCLImpl(
+            d2d_params, count, scale_factor, first_entry.tensor->dtype(),
+            gpu_context_->streams[global_state_->current_nccl_stream]
+                                 [first_entry.device]);
 #endif
         // TODO: https://github.com/horovod/horovod/issues/2230
         // gpu_context_->ErrorCheck("BatchedD2DMemcpyCudaImpl",
@@ -432,7 +445,6 @@ void GPUAllreduce::ScaleMemcpyOutFusionBuffer(
     }
   }
 }
-#endif
 
 void GPUAllreduce::MemcpyEntryOutFusionBuffer(
     const std::vector<TensorTableEntry>& entries,

@@ -120,27 +120,6 @@ public:
                  const Response& response) override;
 
 protected:
-  void MemcpyEntryInFusionBuffer(const std::vector<TensorTableEntry>& entries,
-                                 const TensorTableEntry& e,
-                                 void* buffer_data_at_offset) override;
-
-  void MemcpyEntryOutFusionBuffer(const std::vector<TensorTableEntry>& entries,
-                                  const void* buffer_data_at_offset,
-                                  TensorTableEntry& e) override;
-
-  void ScaleMemcpyInFusionBuffer(const std::vector<TensorTableEntry>& entries,
-                                 const void*& fused_input_data,
-                                 void*& buffer_data, size_t& buffer_len,
-                                 double scale_factor);
-  void ScaleMemcpyOutFusionBuffer(void* buffer_data, size_t buffer_len,
-                                  double scale_factor,
-                                  std::vector<TensorTableEntry>& entries);
-
-  void ScaleBuffer(double scale_factor,
-                   const std::vector<TensorTableEntry>& entries,
-                   const void* fused_input_data, void* buffer_data,
-                   int64_t num_elements) override;
-
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
   CCLGPUContext* ccl_context_;
@@ -299,8 +278,8 @@ protected:
     received_splits_shape.AddDim(recvsplits.size());
 
     std::shared_ptr<ReadyEvent> revent;
-    Status rstatus =
-        e.context->AllocateOutput(1, received_splits_shape, &e.received_splits, &revent);
+    Status rstatus = e.context->AllocateOutput(1, received_splits_shape,
+                                               &e.received_splits, &revent);
     if (!rstatus.ok()) {
       LOG(WARNING)
           << "CCLGPUAlltoall::PrepareOutputAndParams failed to allocate "
