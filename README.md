@@ -3,27 +3,28 @@ Intel® Optimization for Horovod* is the distributed training framework for Tens
 ## Install
 
 ### Hardware Requirements
- - Intel® Data Center GPU Max Series, Driver Version: [540](https://dgpu-docs.intel.com/releases/stable_540_20221205.html)
+ - Intel® Data Center GPU Max Series, Driver Version: [602](https://dgpu-docs.intel.com/releases/stable_602_20230323.html)
 
 
 ### Software Requirement
+ - Note: The patched PyTorch 1.13.0a0 is required to work with Intel® Extension for PyTorch* on Intel® graphics card for now.
 
 |Software|Installation requirement|
 |-|-|
-|Intel® oneAPI Base Toolkit|[Install Intel® oneAPI Base Toolkit](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.1/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)|
-|TensorFlow|[Install tensorflow 2.11.0](https://www.tensorflow.org/install)|
-|Intel® Extension for TensorFlow*|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow/tree/r1.1#install) |
-|Pytorch|[Install Pytorch 1.13.0](https://pytorch.org/get-started/locally/#linux-installation)|
+|Intel® oneAPI Base Toolkit|[Install Intel® oneAPI Base Toolkit](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.2/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)|
+|TensorFlow|[Install tensorflow 2.12.0](https://www.tensorflow.org/install)|
+|Intel® Extension for TensorFlow*|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow/tree/r1.2#install) |
+|Pytorch|[Install Pytorch 1.13.0a0](https://developer.intel.com/ipex-whl-stable-xpu)|
 |Intel® Extension for Pytorch*|[Install Intel® Extension for Pytorch*](https://github.com/intel/intel-extension-for-pytorch#installation)|
-|System|SUSE Linux Enterprise Server(SLES) 15 SP3/SP4, RedHat 8.6 (64-bit)|
-|Python|3.7-3.10|
+|System|Ubuntu 22.04, RedHat 8.6 (64-bit), SUSE Linux Enterprise Server(SLES) 15 SP3/SP4|
+|Python|3.8-3.10|
 |Pip|19.0 or later (requires manylinux2014 support)|
 
 ### Install GPU Drivers
 
 |OS|Intel GPU|Install Intel GPU Driver|
 |-|-|-|
-|SLES 15 SP3/SP4, RedHat 8.6|Intel® Data Center GPU Max Series|  Refer to the [Installation Guides](https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series) for latest driver installation. If install the verified Intel® Data Center GPU Max Series/Intel® Data Center GPU Flex Series [540](https://dgpu-docs.intel.com/releases/stable_540_20221205.html), please append the specific version after components.|
+|Ubuntu 22.04, RedHat 8.6, SLES 15 SP3/SP4|Intel® Data Center GPU Max Series|  Refer to the [Installation Guides](https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series) for latest driver installation. If install the verified Intel® Data Center GPU Max Series/Intel® Data Center GPU Flex Series [602](https://dgpu-docs.intel.com/releases/stable_602_20230323.html), please append the specific version after components.|
 
 
 ### Installation Channel:
@@ -36,10 +37,10 @@ Intel® Optimization for Horovod* can be installed through the following channel
 
 
 ### Install for GPU
-Installing Intel® Optimization for Horovod* with different frameworks is feasiable. You could choose either Intel® Extension for TensorFlow* or Intel® Extension for Pytorch* as dependency.
+Installing Intel® Optimization for Horovod* with different frameworks is feasible. You could choose either Intel® Extension for TensorFlow* or Intel® Extension for Pytorch* as dependency.
  1. Installing Intel® Extension for TensorFlow* and Intel® Optimization for Horovod* with command:
     ```bash
-    pip install tensorflow==2.11.0
+    pip install tensorflow==2.12.0
     pip install --upgrade intel-extension-for-tensorflow[gpu]
     pip install intel-optimization-for-horovod
     ```
@@ -47,7 +48,7 @@ Installing Intel® Optimization for Horovod* with different frameworks is feasia
  2. Installing Intel® Extension for Pytorch* and Intel® Optimization for Horovod* with command:
     ```bash
     python -m pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
-    python -m pip install intel_extension_for_pytorch==1.13.10+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
+    python -m pip install intel_extension_for_pytorch==1.13.120+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
     pip install intel-optimization-for-horovod
     ```
 

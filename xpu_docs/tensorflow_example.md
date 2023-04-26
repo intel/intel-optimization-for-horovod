@@ -49,3 +49,6 @@ You could run examples directly with the following command:
 ```bash
 mpirun -np 2 -l python tensorflow2_keras_mnist.py
 ```
+
+## Better performance with grouped allreduce
+Using grouped allreduce can improve performance, but at the cost of consuming more device memory. Checking the [discussion on the best practice for grouped allreduce](https://github.com/horovod/horovod/discussions/2773) for more details.

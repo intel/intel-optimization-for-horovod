@@ -13,7 +13,29 @@ An Intel GPU driver is needed to build with GPU support. Refer to [Install Intel
 
 ### Install oneAPI Base Toolkit
 
-Refer to [Install oneAPI Base Toolkit Packages](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.1/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages).
+Need to install components of Intel® oneAPI Base Toolkit:
+- Intel® oneAPI DPC++ Compiler
+- Intel® oneAPI Math Kernel Library (oneMKL)
+- Intel® oneAPI Collective Communications Library (oneCCL)
+- Intel® oneAPI MPI Library (IntelMPI)
+
+```bash
+$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/7deeaac4-f605-4bcf-a81b-ea7531577c61/l_BaseKit_p_2023.1.0.46401_offline.sh
+# 3 components are necessary: DPC++/C++ Compiler with DPC++ Libiary, oneMKL and oneCCL(IntelMPI will be installed automatically as oneCCL's dependency).
+$ sudo sh ./l_BaseKit_p_2023.1.0.46401_offline.sh
+```
+
+For any more details, please follow the procedure in https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html.
+#### Setup environment variables
+```bash
+# DPC++ Compiler/oneMKL
+source /path to basekit/intel/oneapi/compiler/latest/env/vars.sh
+source /path to basekit/intel/oneapi/mkl/latest/env/vars.sh
+# oneCCL (and Intel® oneAPI MPI Library as its dependency)
+source /path to basekit/intel/oneapi/mpi/latest/env/vars.sh
+source /path to basekit/intel/oneapi/ccl/latest/env/vars.sh
+```
+
 
 
 
@@ -22,7 +44,7 @@ Refer to [Install oneAPI Base Toolkit Packages](https://github.com/intel/intel-e
 Intel® Optimization for Horovod* depends on TensorFlow* or/and Pytorch* to build from source.
 
 ```bash
-$ pip install tensorflow==2.11.0
+$ pip install tensorflow==2.12.0
 
 $ pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
 ```
@@ -34,7 +56,7 @@ $ pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
 ```bash
 $ git clone https://github.com/intel/intel-optimization-for-horovod
 $ cd intel-optimization-for-horovod
-# The repo defaults to the `master` branch. You can also check out a release branch:
+# The repo defaults to the `main` branch. You can also check out a release branch:
 $ git checkout <branch_name>
 
 $ git submodule init && git submodule update
@@ -73,9 +95,9 @@ $ pip install --upgrade intel-extension-for-tensorflow[gpu]
 
 
 - To run Pytorch* applications.
-To avoid incompatibility issue, please try to build latest Intel® Extension for PyTorch* from source code. Check [Installation Guide](https://intel.github.io/intel-extension-for-pytorch/xpu/latest/tutorials/installation.html#install-via-compiling-from-source) for detailed information. Source code is available at the [xpu-master branch](https://github.com/intel/intel-extension-for-pytorch/tree/xpu-master).
-
-
+```
+$ python -m pip install intel_extension_for_pytorch==1.13.120+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
+```
 
 You can then follow the steps in [Contributing guide](../CONTRIBUTING.md) to run some tests to confirm it works as expected.
 
