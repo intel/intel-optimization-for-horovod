@@ -66,16 +66,23 @@ $ git submodule init && git submodule update
 
 ### Build wheel and install
 
+- set environment variables
+
 ```bash
-$ rm -rf build/
+$ source /path/to/intel/oneapi/compiler/latest/env/vars.sh
+$ source /path/to/intel/oneapi/mkl/latest/env/vars.sh # for runtime only
+$ source /path/to/intel/oneapi/mpi/latest/env/vars.sh
+$ source /path/to/intel/oneapi/ccl/latest/env/vars.sh
+```
 
-# You could build with single framework support by changing `HOROVOD_WITHOUT_PYTORCH=1` or `HOROVOD_WITHOUT_TENSORFLOW=1`
-$ CC=icx CXX=icpx HOROVOD_GPU=DPCPP \
-HOROVOD_WITHOUT_MXNET=1 HOROVOD_WITH_PYTORCH=1 HOROVOD_WITH_TENSORFLOW=1 \
-HOROVOD_WITHOUT_GLOO=1 HOROVOD_GPU_OPERATIONS=CCL HOROVOD_WITH_MPI=1 \
-python setup.py bdist_wheel
+- build and install
 
-$ pip install dist/*.whl
+```bash
+# will get package named xxx.tar.gz
+$ python setup.py sdist
+
+$ CC=icx CXX=icpx \
+pip install --no-cache-dir intel-optimization-for-horovod -f <Path to tar.gz>
 ```
 
 
