@@ -28,6 +28,58 @@ using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
 namespace horovod {
 namespace common {
 
+template <typename TL, typename T, typename TS>
+void BatchedScaledMemcpyDatatype(size_t idx, const T* input, T* output,
+                                 size_t size, const TS scale_factor,
+                                 int groups_num) {
+  const int64_t num_words = size / sizeof(TL);
+  const TL* read_ptr = reinterpret_cast<const TL*>(input);
+  TL* write_ptr = reinterpret_cast<TL*>(output);
+  for (size_t i = idx; i < num_words; i += groups_num) {
+    // Load word
+    TL word = read_ptr[i];
+    T* val = reinterpret_cast<T*>(&word);
+
+    // Scale elements in word
+    for (int j = 0; j < sizeof(TL) / sizeof(T); ++j) {
+      val[j] *= scale_factor;
+    }
+
+    // Write word
+    write_ptr[i] = word;
+  }
+
+  // Deal with any remaining elements
+  size_t remainder = (size % sizeof(TL)) / sizeof(T);
+  if (remainder > 0 && idx < remainder) {
+    const T* input_r = reinterpret_cast<const T*>(read_ptr + num_words);
+    T* output_r = reinterpret_cast<T*>(write_ptr + num_words);
+    output_r[idx] = scale_factor * input_r[idx];
+  }
+}
+
+template <typename T>
+void BatchedMemcpyDatatype(size_t idx, void* in, void* out, size_t size,
+                           int groups_num) {
+  const T* input = reinterpret_cast<const T*>(in);
+  T* output = reinterpret_cast<T*>(out);
+  const size_t num_elements = size / sizeof(T);
+
+  for (size_t i = idx; i < num_elements; i += groups_num) {
+    output[i] = input[i];
+  }
+
+  // Deal with any remaining bytes
+  size_t remainder = size % sizeof(T);
+  if (remainder > 0 && idx < remainder) {
+    const unsigned char* input_r =
+        reinterpret_cast<const unsigned char*>(input + num_elements);
+    unsigned char* output_r =
+        reinterpret_cast<unsigned char*>(output + num_elements);
+    output_r[idx] = input_r[idx];
+  }
+}
+
 template <typename T, typename TS> struct BatchedScaledMemcpySYCLKernel {
   BatchedScaledMemcpySYCLKernel(BatchedD2DParams& params, TS scale_factor,
                                 int groups_per_copy)
@@ -40,12 +92,37 @@ template <typename T, typename TS> struct BatchedScaledMemcpySYCLKernel {
 
     const size_t idx = group_size * (group_id % groups_per_copy_) + local_id;
     int cur_index = group_id / groups_per_copy_;
+    int groups_num = group_size * groups_per_copy_;
 
-    T* output = static_cast<T*>(params_.out[cur_index]);
-    const T* input = static_cast<T*>(params_.in[cur_index]);
-    size_t num_words = params_.sizes[cur_index] / sizeof(T);
-    for (size_t i = idx; i < num_words; i += group_size * groups_per_copy_) {
-      output[i] = input[i] * scale_factor_;
+    T* output = reinterpret_cast<T*>(params_.out[cur_index]);
+    const T* input = reinterpret_cast<const T*>(params_.in[cur_index]);
+    const size_t size = params_.sizes[cur_index];
+
+    size_t align_in = reinterpret_cast<size_t>(input) % BATCHED_D2D_PADDING;
+    size_t align_out = reinterpret_cast<size_t>(output) % BATCHED_D2D_PADDING;
+
+    // Select load/store size based on the misaligned buffer
+    size_t align = (align_out == 0) ? align_in : align_out;
+    if (align_in && align_out) {
+      // If both are misaligned, use datatype size
+      align = sizeof(T);
+    }
+
+    if (align % 16 == 0) {
+      BatchedScaledMemcpyDatatype<sycl::ulonglong2>(idx, input, output, size,
+                                                    scale_factor_, groups_num);
+    } else if (align % 8 == 0) {
+      BatchedScaledMemcpyDatatype<unsigned long long>(
+          idx, input, output, size, scale_factor_, groups_num);
+    } else if (align % 4 == 0) {
+      BatchedScaledMemcpyDatatype<unsigned int>(idx, input, output, size,
+                                                scale_factor_, groups_num);
+    } else if (align % 2 == 0) {
+      BatchedScaledMemcpyDatatype<unsigned short>(idx, input, output, size,
+                                                  scale_factor_, groups_num);
+    } else {
+      BatchedScaledMemcpyDatatype<unsigned char>(idx, input, output, size,
+                                                 scale_factor_, groups_num);
     }
   }
 
@@ -65,12 +142,38 @@ template <typename T> struct BatchedMemcpySYCLKernel {
 
     const size_t idx = group_size * (group_id % groups_per_copy_) + local_id;
     int cur_index = group_id / groups_per_copy_;
+    int groups_num = group_size * groups_per_copy_;
 
-    T* output = static_cast<T*>(params_.out[cur_index]);
-    const T* input = static_cast<T*>(params_.in[cur_index]);
-    size_t num_words = params_.sizes[cur_index] / sizeof(T);
-    for (size_t i = idx; i < num_words; i += group_size * groups_per_copy_) {
-      output[i] = input[i];
+    void* output = params_.out[cur_index];
+    void* input = params_.in[cur_index];
+    const size_t size = params_.sizes[cur_index];
+
+    size_t align_in = reinterpret_cast<size_t>(input) % BATCHED_D2D_PADDING;
+    size_t align_out = reinterpret_cast<size_t>(output) % BATCHED_D2D_PADDING;
+
+    // Select load/store size based on the misaligned buffer
+    size_t align = (align_out == 0) ? align_in : align_out;
+    if (align_in && align_out) {
+      // If both are misaligned, use unsigned char (this should not occur for
+      // Allreduces as fusion buffer locations should be aligned by applying
+      // BATCHED_D2D_PADDING during construction.)
+      align = 1;
+    }
+
+    if (align % 16 == 0) {
+      BatchedMemcpyDatatype<sycl::ulonglong2>(idx, input, output, size,
+                                              groups_num);
+    } else if (align % 8 == 0) {
+      BatchedMemcpyDatatype<unsigned long long>(idx, input, output, size,
+                                                groups_num);
+    } else if (align % 4 == 0) {
+      BatchedMemcpyDatatype<unsigned int>(idx, input, output, size, groups_num);
+    } else if (align % 2 == 0) {
+      BatchedMemcpyDatatype<unsigned short>(idx, input, output, size,
+                                            groups_num);
+    } else {
+      BatchedMemcpyDatatype<unsigned char>(idx, input, output, size,
+                                           groups_num);
     }
   }
 

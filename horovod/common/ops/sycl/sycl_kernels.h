@@ -21,7 +21,7 @@
 #include "../../message.h"
 
 #define BATCHED_D2D_CAPACITY 80
-#define BATCHED_D2D_PADDING 1
+#define BATCHED_D2D_PADDING 16
 
 namespace horovod {
 namespace common {
