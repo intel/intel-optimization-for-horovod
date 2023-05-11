@@ -7,14 +7,14 @@ Intel® Optimization for Horovod* is the distributed training framework for Tens
 
 
 ### Software Requirement
- - Note: The patched PyTorch 1.13.0a0 is required to work with Intel® Extension for PyTorch* on Intel® graphics card for now.
+ - Note: The patched PyTorch 1.13.0a0+git6c9b55e is required to work with Intel® Extension for PyTorch* on Intel® graphics card for now.
 
 |Software|Installation requirement|
 |-|-|
 |Intel® oneAPI Base Toolkit|[Install Intel® oneAPI Base Toolkit](https://github.com/intel/intel-extension-for-tensorflow/blob/r1.2/docs/install/install_for_gpu.md#install-oneapi-base-toolkit-packages)|
 |TensorFlow|[Install tensorflow 2.12.0](https://www.tensorflow.org/install)|
 |Intel® Extension for TensorFlow*|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow/tree/r1.2#install) |
-|Pytorch|[Install Pytorch 1.13.0a0](https://developer.intel.com/ipex-whl-stable-xpu)|
+|Pytorch|[Install Pytorch 1.13.0a0+git6c9b55e](https://developer.intel.com/ipex-whl-stable-xpu)|
 |Intel® Extension for Pytorch*|[Install Intel® Extension for Pytorch*](https://github.com/intel/intel-extension-for-pytorch#installation)|
 |System|Ubuntu 22.04, RedHat 8.6 (64-bit), SUSE Linux Enterprise Server(SLES) 15 SP3/SP4|
 |Python|3.8-3.10|
@@ -47,7 +47,7 @@ Installing Intel® Optimization for Horovod* with different frameworks is feasib
 
  2. Installing Intel® Extension for Pytorch* and Intel® Optimization for Horovod* with command:
     ```bash
-    python -m pip install torch==1.13.0a0 -f https://developer.intel.com/ipex-whl-stable-xpu
+    python -m pip install torch==1.13.0a0+git6c9b55e -f https://developer.intel.com/ipex-whl-stable-xpu
     python -m pip install intel_extension_for_pytorch==1.13.120+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
     pip install intel-optimization-for-horovod
     ```
