@@ -16,6 +16,14 @@
 #ifndef HOROVOD_SYCL_KERNELS_H
 #define HOROVOD_SYCL_KERNELS_H
 
+#if __has_include(<sycl/sycl.hpp>)
+#include <sycl/sycl.hpp>
+#elif __has_include(<CL/sycl.hpp>)
+#include <CL/sycl.hpp>
+#else
+#error "Unsupported compiler"
+#endif
+
 #include "../../common.h"
 #include "../../global_state.h"
 #include "../../message.h"
@@ -34,11 +42,11 @@ struct BatchedD2DParams {
 
 // Performs a batched d2d memcopy
 void BatchedD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
-                              gpuStream_t stream);
+                              std::shared_ptr<sycl::queue> stream);
 
 void BatchedScaledD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
                                     double scale_factor, DataType dtype,
-                                    gpuStream_t stream);
+                                    std::shared_ptr<sycl::queue> stream);
 } // namespace common
 } // namespace horovod
 

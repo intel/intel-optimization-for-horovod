@@ -102,9 +102,9 @@ else()
 endif()
 
 if(CMAKE_CXX_COMPILER MATCHES "icpx$")
-    set(HOROVOD_GPU "DPCPP")
-    set(HOROVOD_GPU_OPERATIONS "CCL")
-    set(HOROVOD_WITHOUT_GLOO "1")
+    set(ENV{HOROVOD_GPU} "DPCPP")
+    set(ENV{HOROVOD_GPU_OPERATIONS} "CCL")
+    set(ENV{HOROVOD_WITHOUT_GLOO} "1")
 endif()
 
 # GPU Operations
