@@ -45,10 +45,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Upload
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: Event File
         path: ${{ github.event_path }}
+
+  setup-py:
+    name: "setup.py"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Test setup.py
+        env:
+          HOROVOD_WITHOUT_TENSORFLOW: 1
+          HOROVOD_WITHOUT_PYTORCH: 1
+          HOROVOD_WITHOUT_MXNET: 1
+          HOROVOD_WITHOUT_GLOO: 1
+          HOROVOD_WITHOUT_MPI: 1
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install setuptools wheel
+          python setup.py sdist
+          pip -v install dist/horovod-*.tar.gz
 
   init-workflow:
     name: "Init Workflow"
@@ -62,9 +85,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.8
       - name: Pip install dependencies
@@ -92,15 +115,15 @@ jobs:
             if [[ -z "$changes" ]]
             then
               echo "No code changes, no need to build and test"
-              echo "::set-output name=needed::false"
+              echo "needed=false" >> $GITHUB_OUTPUT
             else
               echo "Code changes, we need to build and test:"
               echo "$changes"
-              echo "::set-output name=needed::true"
+              echo "needed=true" >> $GITHUB_OUTPUT
             fi
           else
             echo "This is not part of a pull request, we need to build and test"
-            echo "::set-output name=needed::true"
+            echo "needed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure Buildkite Build
@@ -118,13 +141,13 @@ jobs:
             # we add this label to the branch used by Buildkite to avoid it cancelling one of concurrent schedule and push builds on master
             branch_label="${branch} (schedule)"
           fi
-          echo "::set-output name=branch-label::${branch_label}"
+          echo "branch-label=${branch_label}" >> $GITHUB_OUTPUT
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]
           then
             head_sha="${{ github.event.pull_request.head.sha }}"
             message="$(gh api https://api.github.com/repos/horovod/horovod/commits/${head_sha} -q .commit.message | head -n1)"
-            echo "::set-output name=message::${message}"
+            echo "message=${message}" >> $GITHUB_OUTPUT
           fi
 
       - name: Provide PR meta
@@ -139,7 +162,7 @@ jobs:
           cat pr.json
 
       - name: Upload PR meta
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: github.event_name == 'pull_request'
         with:
           name: PR Meta
@@ -159,7 +182,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: test-cpu-gloo-py3_7-tf1_15_5-keras2_2_4-torch1_8_1-mxnet1_5_1_p0-pyspark3_3_0
+          - image: test-cpu-gloo-py3_7-tf1_15_5-keras2_2_4-torch1_8_1-mxnet1_5_1_p0-pyspark3_4_0
             Elastic_Spark_TensorFlow_Tests_2: true
             Elastic_Tests_2: true
             Gloo_Cluster_PyTests: true
@@ -181,7 +204,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-gloo-py3_7-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark2_4_8
+          - image: test-cpu-gloo-py3_7-tf2_11_0-keras2_11_0-torch1_13_1-mxnet1_9_1-pyspark2_4_8
             Elastic_Spark_TensorFlow_Tests_1: true
             Elastic_Spark_Torch_Tests: true
             Elastic_Tests_1: true
@@ -193,7 +216,6 @@ jobs:
             Gloo_Single_PyTests: true
             Gloo_TensorFlow_2_0_Keras_MNIST_api: true
             Gloo_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            Gloo_TensorFlow_2_0_MNIST_Data_Service: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_api: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_horovodrun: true
             Gloo_TensorFlow_2_0_MNIST_api: true
@@ -206,7 +228,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-gloo-py3_8-tf2_7_3-keras2_7_0-torch1_10_2-mxnet1_7_0_p2-pyspark3_3_0
+          - image: test-cpu-gloo-py3_8-tf2_10_1-keras2_10_0-torch1_12_1-mxnet1_7_0_p2-pyspark3_4_0
             Elastic_Tests_1: true
             Gloo_Cluster_PyTests: true
             Gloo_MXNet_MNIST_horovodrun: true
@@ -229,7 +251,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-gloo-py3_8-tf2_8_2-keras2_8_0-torch1_11_0-mxnet1_8_0_p0-pyspark3_3_0
+          - image: test-cpu-gloo-py3_8-tf2_11_1-keras2_11_0-torch1_13_1-mxnet1_8_0_p0-pyspark3_4_0
             Elastic_Tests_1: true
             Gloo_Cluster_PyTests: true
             Gloo_MXNet_MNIST_horovodrun: true
@@ -239,7 +261,6 @@ jobs:
             Gloo_Single_PyTests: true
             Gloo_TensorFlow_2_0_Keras_MNIST_api: true
             Gloo_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            Gloo_TensorFlow_2_0_MNIST_Data_Service: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_api: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_horovodrun: true
             Gloo_TensorFlow_2_0_MNIST_api: true
@@ -252,7 +273,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_2_2
+          - image: test-cpu-gloo-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_3_2
             Elastic_Spark_TensorFlow_Tests_1: true
             Elastic_Spark_Torch_Tests: true
             Elastic_Tests_1: true
@@ -264,7 +285,6 @@ jobs:
             Gloo_Single_PyTests: true
             Gloo_TensorFlow_2_0_Keras_MNIST_api: true
             Gloo_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            Gloo_TensorFlow_2_0_MNIST_Data_Service: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_api: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_horovodrun: true
             Gloo_TensorFlow_2_0_MNIST_api: true
@@ -277,7 +297,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_3_0
+          - image: test-cpu-gloo-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_4_0
             Elastic_Spark_TensorFlow_Tests_1: true
             Elastic_Spark_Torch_Tests: true
             Elastic_Tests_1: true
@@ -289,7 +309,6 @@ jobs:
             Gloo_Single_PyTests: true
             Gloo_TensorFlow_2_0_Keras_MNIST_api: true
             Gloo_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            Gloo_TensorFlow_2_0_MNIST_Data_Service: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_api: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_horovodrun: true
             Gloo_TensorFlow_2_0_MNIST_api: true
@@ -302,7 +321,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-mpich-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_3_0
+          - image: test-cpu-mpich-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_4_0
             MPI_Cluster_PyTests: true
             MPI_MXNet_MNIST_horovodrun: true
             MPI_Parallel_PyTests: true
@@ -311,14 +330,13 @@ jobs:
             MPI_Single_PyTests: true
             MPI_TensorFlow_2_0_Keras_MNIST_api: true
             MPI_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            MPI_TensorFlow_2_0_MNIST_Data_Service: true
             MPI_TensorFlow_2_0_MNIST_api: true
             MPI_TensorFlow_2_0_MNIST_horovodrun: true
             Single_MXNet_MNIST: true
             Single_PyTorch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-openmpi-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_3_0
+          - image: test-cpu-openmpi-gloo-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_4_0
             Elastic_Tests_1: true
             Gloo_Cluster_PyTests: true
             Gloo_MXNet_MNIST_horovodrun: true
@@ -328,7 +346,6 @@ jobs:
             Gloo_Single_PyTests: true
             Gloo_TensorFlow_2_0_Keras_MNIST_api: true
             Gloo_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            Gloo_TensorFlow_2_0_MNIST_Data_Service: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_api: true
             Gloo_TensorFlow_2_0_MNIST_Elastic_horovodrun: true
             Gloo_TensorFlow_2_0_MNIST_api: true
@@ -341,7 +358,6 @@ jobs:
             MPI_Single_PyTests: true
             MPI_TensorFlow_2_0_Keras_MNIST_api: true
             MPI_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            MPI_TensorFlow_2_0_MNIST_Data_Service: true
             MPI_TensorFlow_2_0_MNIST_api: true
             MPI_TensorFlow_2_0_MNIST_horovodrun: true
             Run_PyTests_test_interactiverun: true
@@ -353,7 +369,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-cpu-openmpi-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_3_0
+          - image: test-cpu-openmpi-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_4_0
             MPI_Cluster_PyTests: true
             MPI_MXNet_MNIST_horovodrun: true
             MPI_Parallel_PyTests: true
@@ -362,7 +378,6 @@ jobs:
             MPI_Single_PyTests: true
             MPI_TensorFlow_2_0_Keras_MNIST_api: true
             MPI_TensorFlow_2_0_Keras_MNIST_horovodrun: true
-            MPI_TensorFlow_2_0_MNIST_Data_Service: true
             MPI_TensorFlow_2_0_MNIST_api: true
             MPI_TensorFlow_2_0_MNIST_horovodrun: true
             Run_PyTests_test_interactiverun: true
@@ -374,19 +389,19 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-gpu-gloo-py3_7-tf1_15_5-keras2_2_4-torch1_8_1-mxnet1_5_1_p0-pyspark3_3_0
+          - image: test-gpu-gloo-py3_7-tf1_15_5-keras2_2_4-torch1_8_1-mxnet1_5_1_p0-pyspark3_4_0
             build_timeout: 40
 
-          - image: test-gpu-gloo-py3_8-tf2_7_3-keras2_7_0-torch1_10_2-mxnet1_7_0_p1-pyspark3_3_0
+          - image: test-gpu-gloo-py3_8-tf2_10_1-keras2_10_0-torch1_12_1-mxnet1_7_0_p1-pyspark3_4_0
             build_timeout: 40
 
-          - image: test-gpu-gloo-py3_8-tf2_8_2-keras2_8_0-torch1_11_0-mxnet1_8_0_p0-pyspark3_3_0
+          - image: test-gpu-gloo-py3_8-tf2_11_1-keras2_11_0-torch1_13_1-mxnet1_8_0_p0-pyspark3_4_0
             build_timeout: 40
 
-          - image: test-gpu-openmpi-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_3_0
+          - image: test-gpu-openmpi-gloo-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_4_0
             build_timeout: 40
 
-          - image: test-mixed-openmpi-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1-pyspark3_3_0
+          - image: test-mixed-openmpi-gloo-py3_8-tf2_12_0-keras2_12_0-torch2_0_0-mxnet1_9_1-pyspark3_4_0
             build_timeout: 40
 
     steps:
@@ -417,12 +432,12 @@ jobs:
           echo ::endgroup::
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.8
 
@@ -1733,87 +1748,6 @@ jobs:
           docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_Keras_MNIST_horovodrun_ONECCL_OFI_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && \$(cat /mpirun_command) python /horovod/examples/tensorflow2/tensorflow2_keras_mnist.py"
         shell: bash
 
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [attempt 1 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_run_1
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service && true
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_1
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_1:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c " horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [attempt 2 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_run_2
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_run_1.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_2
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_2:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c " horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [attempt 3 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_run_3
-        continue-on-error: false
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_run_2.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_3
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c " horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL MPI] [attempt 1 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI && true
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_mpi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL MPI] [attempt 2 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_mpi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL MPI] [attempt 3 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_3
-        continue-on-error: false
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_3
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_mpi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL OFI] [attempt 1 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI && true
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL OFI] [attempt 2 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL OFI] [attempt 3 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_3
-        continue-on-error: false
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_3
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
       - name: "MPI TensorFlow 2.0 MNIST api [attempt 1 of 3]"
         id: MPI_TensorFlow_2_0_MNIST_api_run_1
         continue-on-error: true
@@ -2409,7 +2343,7 @@ jobs:
         shell: bash
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: always() && contains(matrix.image, '-cpu-')
         with:
           name: Unit Test Results - ${{ matrix.image }}
@@ -2428,7 +2362,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: test-cpu-openmpi-gloo-py3_8-tfhead-keras_none-torchhead-mxnethead-pyspark3_3_0
+          - image: test-cpu-openmpi-gloo-py3_8-tfhead-keras_none-torchhead-mxnethead-pyspark3_4_0
             Elastic_Tests_1: true
             Gloo_Cluster_PyTests: true
             Gloo_MXNet2_MNIST_api: true
@@ -2463,7 +2397,7 @@ jobs:
             Spark_Torch_MNIST: true
             build_timeout: 30
 
-          - image: test-gpu-openmpi-gloo-py3_8-tfhead-keras_none-torchhead-mxnethead-pyspark3_3_0
+          - image: test-gpu-openmpi-gloo-py3_8-tfhead-keras_none-torchhead-mxnethead-pyspark3_4_0
             build_timeout: 40
 
     steps:
@@ -2494,12 +2428,12 @@ jobs:
           echo ::endgroup::
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.8
 
@@ -3810,87 +3744,6 @@ jobs:
           docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_Keras_MNIST_horovodrun_ONECCL_OFI_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && \$(cat /mpirun_command) python /horovod/examples/tensorflow2/tensorflow2_keras_mnist.py"
         shell: bash
 
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [attempt 1 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_run_1
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service && true
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_1
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_1:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c " horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [attempt 2 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_run_2
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_run_1.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_2
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_2:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c " horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [attempt 3 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_run_3
-        continue-on-error: false
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_run_2.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_3
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c " horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL MPI] [attempt 1 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI && true
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_mpi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL MPI] [attempt 2 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_1.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_mpi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL MPI] [attempt 3 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_3
-        continue-on-error: false
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_2.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_3
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_MPI_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_mpi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL OFI] [attempt 1 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI && true
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL OFI] [attempt 2 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2
-        continue-on-error: true
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_1.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
-      - name: "MPI TensorFlow 2.0 MNIST Data Service [ONECCL OFI] [attempt 3 of 3]"
-        id: MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_3
-        continue-on-error: false
-        if: always() && steps.build.outcome == 'success' && matrix.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI && steps.MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_2.outcome == 'failure'
-        run: |
-          mkdir -p artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_3
-          docker-compose -f docker-compose.test.yml run -e GITHUB_ACTIONS --rm --volume "$(pwd)/artifacts/${{ matrix.image }}/MPI_TensorFlow_2_0_MNIST_Data_Service_ONECCL_OFI_run_3:/artifacts" ${{ matrix.image }} /usr/bin/timeout 10m bash -c "\$(cat /oneccl_env) && echo '/mpirun_command_ofi' > /mpirun_command && horovodrun -np 2 python -m horovod.tensorflow.data.compute_worker /tmp/compute.json & horovodrun -np 2 --mpi python /horovod/examples/tensorflow2/tensorflow2_mnist_data_service.py /tmp/compute.json"
-        shell: bash
-
       - name: "MPI TensorFlow 2.0 MNIST api [attempt 1 of 3]"
         id: MPI_TensorFlow_2_0_MNIST_api_run_1
         continue-on-error: true
@@ -4486,7 +4339,7 @@ jobs:
         shell: bash
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: always() && contains(matrix.image, '-cpu-')
         with:
           name: Unit Test Results - ${{ matrix.image }}
@@ -4539,12 +4392,12 @@ jobs:
           echo ::endgroup::
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.8
 
@@ -4561,7 +4414,7 @@ jobs:
 
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: always() && contains(matrix.image, '-cpu-')
         with:
           name: Unit Test Results - ${{ matrix.image }}
@@ -4573,7 +4426,7 @@ jobs:
     if: >
       needs.init-workflow.outputs.run-at-all == 'true' &&
       needs.init-workflow.outputs.run-builds-and-tests == 'true'
-    runs-on: macos-latest
+    runs-on: macos-11
 
     strategy:
       max-parallel: 3
@@ -4590,21 +4443,21 @@ jobs:
             TORCHVISION: 0.7.0
             MXNET: 1.5.1.post0
 
-          - image: test-cpu-gloo-py3_8-tf2_8_2-keras2_8_0-torch1_11_0-mxnet1_7_0_p2
+          - image: test-cpu-gloo-py3_8-tf2_9_2-keras2_9_0-torch1_11_0-mxnet1_7_0_p2
             HOROVOD_WITHOUT_MPI: 1
             HOROVOD_WITH_GLOO: 1
-            TENSORFLOW: 2.8.2
-            KERAS: 2.8.0
+            TENSORFLOW: 2.9.2
+            KERAS: 2.9.0
             PYTORCH: 1.11.0
             PYTORCH_LIGHTNING: 1.5.9
             TORCHVISION: 0.12.0
             MXNET: 1.7.0.post2
 
-          - image: test-openmpi-cpu-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1
+          - image: test-openmpi-cpu-gloo-py3_8-tf2_10_0-keras2_10_0-torch1_12_1-mxnet1_9_1
             HOROVOD_WITH_MPI: 1
             HOROVOD_WITH_GLOO: 1
-            TENSORFLOW: 2.9.1
-            KERAS: 2.9.0
+            TENSORFLOW: 2.10.0
+            KERAS: 2.10.0
             PYTORCH: 1.12.1
             PYTORCH_LIGHTNING: 1.5.9
             TORCHVISION: 0.13.1
@@ -4612,7 +4465,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
@@ -4661,7 +4514,7 @@ jobs:
 
           artifacts_path="$(pwd)/artifacts/${{ matrix.image }}-macos-run-1"
           mkdir -p "$artifacts_path"
-          echo "::set-output name=artifacts-path::$artifacts_path"
+          echo "artifacts-path=$artifacts_path" >> $GITHUB_OUTPUT
           echo pytest -v --capture=no --continue-on-collection-errors --junit-xml=$artifacts_path/junit.\$1.\${HOROVOD_RANK:-\${OMPI_COMM_WORLD_RANK:-\${PMI_RANK}}}.\$2.xml \${@:2} > pytest.sh
           chmod u+x pytest.sh
 
@@ -4680,7 +4533,7 @@ jobs:
 
           artifacts_path="$(pwd)/artifacts/${{ matrix.image }}-macos-run-2"
           mkdir -p "$artifacts_path"
-          echo "::set-output name=artifacts-path::$artifacts_path"
+          echo "artifacts-path=$artifacts_path" >> $GITHUB_OUTPUT
           echo pytest -v --capture=no --continue-on-collection-errors --junit-xml=$artifacts_path/junit.\$1.\${HOROVOD_RANK:-\${OMPI_COMM_WORLD_RANK:-\${PMI_RANK}}}.\$2.xml \${@:2} > pytest.sh
           chmod u+x pytest.sh
 
@@ -4699,7 +4552,7 @@ jobs:
 
           artifacts_path="$(pwd)/artifacts/${{ matrix.image }}-macos-run-3"
           mkdir -p "$artifacts_path"
-          echo "::set-output name=artifacts-path::$artifacts_path"
+          echo "artifacts-path=$artifacts_path" >> $GITHUB_OUTPUT
           echo pytest -v --capture=no --continue-on-collection-errors --junit-xml=$artifacts_path/junit.\$1.\${HOROVOD_RANK:-\${OMPI_COMM_WORLD_RANK:-\${PMI_RANK}}}.\$2.xml \${@:2} > pytest.sh
           chmod u+x pytest.sh
 
@@ -4707,7 +4560,7 @@ jobs:
           ls test_*.py | gtimeout 10m xargs -n 1 horovodrun -np 2 /bin/bash ../../pytest.sh macos
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: always()
         with:
           name: Unit Test Results - ${{ matrix.image }}-macos
@@ -4730,7 +4583,7 @@ jobs:
     steps:
       - name: Trigger Buildkite Pipeline
         id: build
-        uses: EnricoMi/trigger-pipeline-action@master
+        uses: buildkite/trigger-pipeline-action@v1.3.1
         env:
           PIPELINE: "horovod/horovod"
           # COMMIT is taken from GITHUB_SHA
@@ -4757,7 +4610,7 @@ jobs:
           output_path: artifacts/Unit Test Results - GPU NON HEADS on Builtkite
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: always()
         with:
           name: Unit Test Results - GPU NON HEADS on Builtkite
@@ -4787,7 +4640,7 @@ jobs:
     steps:
       - name: Trigger Buildkite Pipeline
         id: build
-        uses: EnricoMi/trigger-pipeline-action@master
+        uses: buildkite/trigger-pipeline-action@v1.3.1
         env:
           PIPELINE: "horovod/horovod"
           # COMMIT is taken from GITHUB_SHA
@@ -4814,7 +4667,7 @@ jobs:
           output_path: artifacts/Unit Test Results - GPU HEADS on Builtkite
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         if: always()
         with:
           name: Unit Test Results - GPU HEADS on Builtkite
@@ -4858,9 +4711,9 @@ jobs:
           echo Repository: ${{ github.repository }}
           echo Event: ${{ github.event_name }}
           echo Run: $run
-          echo "::set-output name=run::$run"
+          echo "run=$run" >> $GITHUB_OUTPUT
           echo Push: $push
-          echo "::set-output name=push::$push"
+          echo "push=$push" >> $GITHUB_OUTPUT
 
   docker-build:
     name: Build docker image ${{ matrix.docker-image }} (push=${{ needs.docker-config.outputs.push }})
@@ -4891,7 +4744,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: 'recursive'
 
@@ -5041,7 +4894,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
 
       - name: Diffing ${{ matrix.left_file }} with ${{ matrix.right_file }}
         env:

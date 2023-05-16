@@ -17,7 +17,7 @@ import argparse
 import os
 import numpy as np
 from timeit import default_timer as timer
-
+from packaging import version
 import tensorflow as tf
 import horovod.tensorflow.keras as hvd
 from tensorflow.keras import applications

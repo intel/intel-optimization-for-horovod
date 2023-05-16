@@ -35,8 +35,9 @@ Current non-voting members of the Horovod TSC:
 * [Chongxiao Cao](https://github.com/chongxiaoc) - Uber
 * [Ryan Beethe](https://github.com/rb-determined-ai) - Determined AI, HPE
 * [Abin Shahab](https://github.com/ashahab) - LinkedIn
-* [TJ Xu](https://github.com/Tixxx) - Uber
+* [TJ Xu](https://github.com/Tixxx) - NVIDIA
 * [Keqiu Hu](https://github.com/oliverhu) - LinkedIn
+* [Peng Zhang](https://github.com/irasit) - Uber
 
 Emeritus members of the Horovod TSC:
 * [Lin Yuan](https://github.com/apeforest)

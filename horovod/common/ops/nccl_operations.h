@@ -272,8 +272,8 @@ protected:
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
   NCCLContext* local_nccl_context_;
-  NCCLOpContext local_nccl_op_context_;
   NCCLContext* cross_nccl_context_;
+  NCCLOpContext local_nccl_op_context_;
   NCCLOpContext cross_nccl_op_context_;
   HorovodGlobalState* global_state_;
 };
@@ -296,8 +296,7 @@ public:
 protected:
   Status AllocateOutput(std::vector<TensorTableEntry>& entries,
                         const Response& response,
-                        int64_t**& entry_component_sizes,
-                        int*& recvcounts) override;
+                        int64_t**& entry_component_sizes) override;
 
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
@@ -323,9 +322,6 @@ public:
                const Response& response) const override;
 
 protected:
-  Status AllocateOutput(std::vector<TensorTableEntry>& entries,
-                        const std::vector<TensorShape>& output_shapes) override;
-
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
   NCCLContext* nccl_context_;

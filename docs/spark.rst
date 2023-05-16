@@ -98,14 +98,13 @@ and local filesystems.
 
 `Petastorm <https://github.com/uber/petastorm/blob/master/petastorm/pytorch.py#L259>`__ based data loader is used by default,
 but user can define a custom data loader by overriding the `BaseDataLoader` interface. An async data loader mixin can also
-be added on top of the data loader.  Additionally, the KerasEstimator supports a DataModule argument, similar
-to the Lightning DataModule, which abstracts the data loading and allows for alternative implementations.  For example,
-the NVTabularDataModule integrates the `KerasSequenceLoader <https://github.com/NVIDIA-Merlin/NVTabular/blob/main/nvtabular/loader/tensorflow.py>`__
+be added on top of the data loader.  Additionally, KerasEstimator and TorchEstimator both support an optional DataModule
+argument, similar to the Lightning DataModule, which abstracts the data loading and allows for alternative implementations.
+For example, the NVTabularDataModule integrates the `KerasSequenceLoader <https://github.com/NVIDIA-Merlin/NVTabular/blob/main/nvtabular/loader/tensorflow.py>`__
 from NVTabular to enable GPU-accelerated data loading.
 
-Note, however, due to the complexity of installation, NVTabular
-recommends the use of a `conda` environment or a pre-built docker image.  For users who want to build their own docker images,
-there is an `example Dockerfile <https://github.com/horovod/horovod/blob/master/docker/horovod-nvtabular/Dockerfile>`__ for building Horovod with NVTabular support.
+There is an `example Dockerfile <https://github.com/horovod/horovod/blob/master/docker/horovod-nvtabular/Dockerfile>`__
+for building Horovod with NVTabular support.
 
 .. code-block:: python
 
@@ -353,5 +352,9 @@ With the Run API, the function ``get_available_devices()`` from ``horovod.spark.
 for the spark task from which ``get_available_devices()`` is called.
 See `keras_spark3_rossmann.py <../examples/spark/keras/keras_spark3_rossmann.py>`__ for an example of using
 ``get_available_devices()`` with the Run API.
+
+In some cases, you may want to ignore GPU devices assigned by Spark and always use the local rank as the GPU index.
+You can set environment variable ``HOROVOD_SPARK_USE_LOCAL_RANK_GPU_INDEX`` to ``1`` to have Horovod use the local rank
+as the GPU index for each task.
 
 .. inclusion-marker-end-do-not-remove

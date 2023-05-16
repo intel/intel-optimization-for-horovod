@@ -1512,7 +1512,7 @@ class TorchTests(unittest.TestCase):
         hvd.init()
         rank = hvd.rank()
         scalar = self.cast_and_place(torch.tensor(rank), torch.FloatTensor)
-        with self.assertRaises((torch.FatalError, RuntimeError, hvd.HorovodInternalError)):
+        with self.assertRaises((torch.FatalError, RuntimeError, hvd.HorovodInternalError, ValueError)):
             _ = hvd.reducescatter(scalar, op=hvd.Average)
 
     def test_horovod_reducescatter_adasum(self):

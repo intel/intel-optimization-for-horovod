@@ -167,10 +167,33 @@ def main():
                '    runs-on: ubuntu-latest\n' \
                '    steps:\n' \
                '    - name: Upload\n' \
-               '      uses: actions/upload-artifact@v2\n' \
+               '      uses: actions/upload-artifact@v3\n' \
                '      with:\n' \
                '        name: Event File\n' \
                '        path: ${{ github.event_path }}\n' \
+               '\n' + \
+               '  setup-py:\n' \
+               '    name: "setup.py"\n' \
+               '    runs-on: ubuntu-latest\n' \
+               '    steps:\n' \
+               '      - name: Checkout\n' \
+               '        uses: actions/checkout@v3\n' \
+               '      - name: Setup Python\n' \
+               '        uses: actions/setup-python@v4\n' \
+               '        with:\n' \
+               '          python-version: 3.8\n' \
+               '      - name: Test setup.py\n' \
+               '        env:\n' \
+               '          HOROVOD_WITHOUT_TENSORFLOW: 1\n' \
+               '          HOROVOD_WITHOUT_PYTORCH: 1\n' \
+               '          HOROVOD_WITHOUT_MXNET: 1\n' \
+               '          HOROVOD_WITHOUT_GLOO: 1\n' \
+               '          HOROVOD_WITHOUT_MPI: 1\n' \
+               '        run: |\n' \
+               '          python -m pip install --upgrade pip\n' \
+               '          python -m pip install setuptools wheel\n' \
+               '          python setup.py sdist\n' \
+               '          pip -v install dist/horovod-*.tar.gz\n' \
                '\n' + \
                '\n'.join(jobs)
 
@@ -187,9 +210,9 @@ def main():
                 f'\n'
                 f'    steps:\n'
                 f'      - name: Checkout\n'
-                f'        uses: actions/checkout@v2\n'
+                f'        uses: actions/checkout@v3\n'
                 f'      - name: Setup Python\n'
-                f'        uses: actions/setup-python@v2\n'
+                f'        uses: actions/setup-python@v4\n'
                 f'        with:\n'
                 f'          python-version: 3.8\n'
                 f'      - name: Pip install dependencies\n'
@@ -217,15 +240,15 @@ def main():
                 f'            if [[ -z "$changes" ]]\n'
                 f'            then\n'
                 f'              echo "No code changes, no need to build and test"\n'
-                f'              echo "::set-output name=needed::false"\n'
+                f'              echo "needed=false" >> $GITHUB_OUTPUT\n'
                 f'            else\n'
                 f'              echo "Code changes, we need to build and test:"\n'
                 f'              echo "$changes"\n'
-                f'              echo "::set-output name=needed::true"\n'
+                f'              echo "needed=true" >> $GITHUB_OUTPUT\n'
                 f'            fi\n'
                 f'          else\n'
                 f'            echo "This is not part of a pull request, we need to build and test"\n'
-                f'            echo "::set-output name=needed::true"\n'
+                f'            echo "needed=true" >> $GITHUB_OUTPUT\n'
                 f'          fi\n'
                 f'\n'
                 f'      - name: Configure Buildkite Build\n'
@@ -243,13 +266,13 @@ def main():
                 f'            # we add this label to the branch used by Buildkite to avoid it cancelling one of concurrent schedule and push builds on master\n'
                 f'            branch_label="${{branch}} (schedule)"\n'
                 f'          fi\n'
-                f'          echo "::set-output name=branch-label::${{branch_label}}"\n'
+                f'          echo "branch-label=${{branch_label}}" >> $GITHUB_OUTPUT\n'
                 f'\n'
                 f'          if [[ "${{{{ github.event_name }}}}" == "pull_request" ]]\n'
                 f'          then\n'
                 f'            head_sha="${{{{ github.event.pull_request.head.sha }}}}"\n'
                 f'            message="$(gh api https://api.github.com/repos/horovod/horovod/commits/${{head_sha}} -q .commit.message | head -n1)"\n'
-                f'            echo "::set-output name=message::${{message}}"\n'
+                f'            echo "message=${{message}}" >> $GITHUB_OUTPUT\n'
                 f'          fi\n'
                 f'\n'
                 f'      - name: Provide PR meta\n'
@@ -264,7 +287,7 @@ def main():
                 f'          cat pr.json\n'
                 f'\n'
                 f'      - name: Upload PR meta\n'
-                f'        uses: actions/upload-artifact@v2\n'
+                f'        uses: actions/upload-artifact@v3\n'
                 f"        if: github.event_name == 'pull_request'\n"
                 f'        with:\n'
                 f'          name: PR Meta\n'
@@ -334,12 +357,12 @@ def main():
                 f'          echo ::endgroup::\n'
                 f'\n'
                 f'      - name: Checkout\n'
-                f'        uses: actions/checkout@v2\n'
+                f'        uses: actions/checkout@v3\n'
                 f'        with:\n'
                 f'          submodules: recursive\n'
                 f'\n'
                 f'      - name: Setup Python\n'
-                f'        uses: actions/setup-python@v2\n'
+                f'        uses: actions/setup-python@v4\n'
                 f'        with:\n'
                 f'          python-version: 3.8\n'
                 f'\n'
@@ -366,7 +389,7 @@ def main():
                            for attempt in range(1, attempts+1)]) +
                 f'\n'
                 f'      - name: Upload Test Results\n'
-                f'        uses: actions/upload-artifact@v2\n'
+                f'        uses: actions/upload-artifact@v3\n'
                 f'        if: always() && contains(matrix.image, \'-cpu-\')\n'
                 f'        with:\n'
                 f'          name: Unit Test Results - ${{{{ matrix.image }}}}\n'
@@ -382,7 +405,7 @@ def main():
                 f'    if: >\n'
                 f"      needs.init-workflow.outputs.run-at-all == 'true' &&\n"
                 f"      needs.init-workflow.outputs.run-builds-and-tests == 'true'\n"
-                f'    runs-on: macos-latest\n'
+                f'    runs-on: macos-11\n'
                 f'\n'
                 f'    strategy:\n'
                 f'      max-parallel: 3\n'
@@ -401,21 +424,21 @@ def main():
                 f'            MXNET: 1.5.1.post0\n'
                 f'\n'
                 f''  # mxnet 1.8.0.post0 does not compile for macos due to missing dnnl_config.h
-                f'          - image: test-cpu-gloo-py3_8-tf2_8_2-keras2_8_0-torch1_11_0-mxnet1_7_0_p2\n'
+                f'          - image: test-cpu-gloo-py3_8-tf2_9_2-keras2_9_0-torch1_11_0-mxnet1_7_0_p2\n'
                 f'            HOROVOD_WITHOUT_MPI: 1\n'
                 f'            HOROVOD_WITH_GLOO: 1\n'
-                f'            TENSORFLOW: 2.8.2\n'
-                f'            KERAS: 2.8.0\n'
+                f'            TENSORFLOW: 2.9.2\n'
+                f'            KERAS: 2.9.0\n'
                 f'            PYTORCH: 1.11.0\n'
                 f'            PYTORCH_LIGHTNING: 1.5.9\n'
                 f'            TORCHVISION: 0.12.0\n'
                 f'            MXNET: 1.7.0.post2\n'
                 f'\n'
-                f'          - image: test-openmpi-cpu-gloo-py3_8-tf2_9_1-keras2_9_0-torch1_12_1-mxnet1_9_1\n'
+                f'          - image: test-openmpi-cpu-gloo-py3_8-tf2_10_0-keras2_10_0-torch1_12_1-mxnet1_9_1\n'
                 f'            HOROVOD_WITH_MPI: 1\n'
                 f'            HOROVOD_WITH_GLOO: 1\n'
-                f'            TENSORFLOW: 2.9.1\n'
-                f'            KERAS: 2.9.0\n'
+                f'            TENSORFLOW: 2.10.0\n'
+                f'            KERAS: 2.10.0\n'
                 f'            PYTORCH: 1.12.1\n'
                 f'            PYTORCH_LIGHTNING: 1.5.9\n'
                 f'            TORCHVISION: 0.13.1\n'
@@ -423,7 +446,7 @@ def main():
                 f'\n'
                 f'    steps:\n'
                 f'      - name: Checkout\n'
-                f'        uses: actions/checkout@v2\n'
+                f'        uses: actions/checkout@v3\n'
                 f'        with:\n'
                 f'          submodules: recursive\n'
                 f'\n'
@@ -472,7 +495,7 @@ def main():
                            f'\n'
                            f'          artifacts_path="$(pwd)/artifacts/${{{{ matrix.image }}}}-macos-run-{attempt}"\n'
                            f'          mkdir -p "$artifacts_path"\n'
-                           f'          echo "::set-output name=artifacts-path::$artifacts_path"\n'
+                           f'          echo "artifacts-path=$artifacts_path" >> $GITHUB_OUTPUT\n'
                            f'          echo pytest -v --capture=no --continue-on-collection-errors --junit-xml=$artifacts_path/junit.\$1.\${{HOROVOD_RANK:-\${{OMPI_COMM_WORLD_RANK:-\${{PMI_RANK}}}}}}.\$2.xml \${{@:2}} > pytest.sh\n'
                            f'          chmod u+x pytest.sh\n'
                            f'\n'
@@ -481,7 +504,7 @@ def main():
                            for attempt in range(1, attempts+1)]) +
                 f'\n'
                 f'      - name: Upload Test Results\n'
-                f'        uses: actions/upload-artifact@v2\n'
+                f'        uses: actions/upload-artifact@v3\n'
                 f'        if: always()\n'
                 f'        with:\n'
                 f'          name: Unit Test Results - ${{{{ matrix.image }}}}-macos\n'
@@ -507,7 +530,7 @@ def main():
                 f'    steps:\n'
                 f'      - name: Trigger Buildkite Pipeline\n'
                 f'        id: build\n'
-                f'        uses: EnricoMi/trigger-pipeline-action@master\n'
+                f'        uses: buildkite/trigger-pipeline-action@v1.3.1\n'
                 f'        env:\n'
                 f'          PIPELINE: "horovod/horovod"\n'
                 f'          # COMMIT is taken from GITHUB_SHA\n'
@@ -534,7 +557,7 @@ def main():
                 f'          output_path: artifacts/Unit Test Results - {mode} on Builtkite\n'
                 f'\n'
                 f'      - name: Upload Test Results\n'
-                f'        uses: actions/upload-artifact@v2\n'
+                f'        uses: actions/upload-artifact@v3\n'
                 f'        if: always()\n'
                 f'        with:\n'
                 f'          name: Unit Test Results - {mode} on Builtkite\n'
@@ -583,9 +606,9 @@ def main():
                 f'          echo Repository: ${{{{ github.repository }}}}\n'
                 f'          echo Event: ${{{{ github.event_name }}}}\n'
                 f'          echo Run: $run\n'
-                f'          echo "::set-output name=run::$run"\n'
+                f'          echo "run=$run" >> $GITHUB_OUTPUT\n'
                 f'          echo Push: $push\n'
-                f'          echo "::set-output name=push::$push"\n'
+                f'          echo "push=$push" >> $GITHUB_OUTPUT\n'
                 f'\n'
                 f'  docker-build:\n'
                 f'    name: Build docker image ${{{{ matrix.docker-image }}}} (push=${{{{ needs.docker-config.outputs.push }}}})\n'
@@ -614,7 +637,7 @@ def main():
                 f'\n'
                 f'    steps:\n'
                 f'      - name: Checkout\n'
-                f'        uses: actions/checkout@v2\n'
+                f'        uses: actions/checkout@v3\n'
                 f'        with:\n'
                 f'          submodules: \'recursive\'\n'
                 f'\n'
@@ -758,7 +781,7 @@ def main():
                 f'\n'
                 f'    steps:\n'
                 f'      - name: Checkout\n'
-                f'        uses: actions/checkout@v1\n'
+                f'        uses: actions/checkout@v3\n'
                 f'\n'
                 f'      - name: Diffing ${{{{ matrix.left_file }}}} with ${{{{ matrix.right_file }}}}\n'
                 f'        env:\n'

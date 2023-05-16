@@ -166,14 +166,19 @@ Status TorchOpContext::AllocateOutput(int output_index, TensorShape shape,
   with_device device_context(output_devices_.at(output_index));
   outputs_.at(output_index).resize_(shape_vector);
   *tensor = std::make_shared<TorchTensor>(outputs_.at(output_index));
-#if HAVE_GPU && !HAVE_SYCL
+#if HAVE_GPU
   auto device_ = output_devices_.at(output_index);
   if (device_ != CPU_DEVICE_ID) {
     if (event == nullptr) {
       // On GPU allocation is asynchronous, we need to wait for it to
       // complete.
+#if !HAVE_SYCL
       auto stream = c10::cuda::getCurrentCUDAStream(device_);
       C10_CUDA_CHECK(cudaStreamSynchronize(stream));
+#else
+      auto stream = SYCLQueue();
+      stream.wait();
+#endif
     } else {
       *event = std::shared_ptr<common::ReadyEvent>(RecordReadyEvent(device_));
     }
@@ -191,12 +196,17 @@ Status TorchOpContext::AllocateZeros(int64_t num_elements, DataType dtype,
   ::torch::Tensor zero_tensor = ::torch::zeros(
       num_elements, ::torch::device(device_type).dtype(torch_data_type));
   *tensor = std::make_shared<TorchTensor>(zero_tensor);
-#if HAVE_GPU && !HAVE_SYCL
+#if HAVE_GPU
   if (device_ != CPU_DEVICE_ID) {
     // On GPU allocation is asynchronous, we need to wait for it to
     // complete.
-    auto stream = c10::cuda::getCurrentCUDAStream(device_);
-    C10_CUDA_CHECK(cudaStreamSynchronize(stream));
+#if !HAVE_SYCL
+      auto stream = c10::cuda::getCurrentCUDAStream(device_);
+      C10_CUDA_CHECK(cudaStreamSynchronize(stream));
+#else
+      auto stream = SYCLQueue();
+      stream.wait();
+#endif
   }
 #endif
   return Status::OK();

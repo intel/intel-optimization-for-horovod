@@ -12,7 +12,11 @@ import sys
 import tensorflow as tf
 from horovod.tensorflow.util import _executing_eagerly
 from tensorflow.python.ops import resource_variable_ops
-from tensorflow.python.ops import variables as tf_ops_variables
+try:
+    from tensorflow.python.ops.variables import RefVariable
+except ImportError:
+    # TF 2.13+
+    from tensorflow.python.ops.ref_variable import RefVariable
 
 sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, 'utils'))
 
@@ -110,7 +114,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -157,7 +161,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -214,7 +218,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -261,7 +265,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False,
+                summed = hvd.allreduce(tensor, op=hvd.Sum,
                                        prescale_factor=factor)
 
                 # Scaling done in FP64 math for integer types.
@@ -316,7 +320,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False,
+                summed = hvd.allreduce(tensor, op=hvd.Sum,
                                        postscale_factor=factor)
 
                 multiplied = tensor * size
@@ -371,10 +375,10 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensor = self.tfe.Variable(
                         self.random_uniform([5] * dim, -100, 100, dtype=dtype))
                     with tf.GradientTape() as tape:
-                        summed = hvd.allreduce(tensor, average=False)
+                        summed = hvd.allreduce(tensor, op=hvd.Sum)
                 else:
                     tensor = self.random_uniform([5] * dim, -100, 100, dtype=dtype)
-                    summed = hvd.allreduce(tensor, average=False)
+                    summed = hvd.allreduce(tensor, op=hvd.Sum)
 
                 grad_ys = tf.ones([5] * dim)
                 if _executing_eagerly():
@@ -409,7 +413,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensors = [tf.cast(self.random_uniform(
                     [17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
-                summed = hvd.grouped_allreduce(tensors, average=False)
+                summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
             multiplied = [tensor * size for tensor in tensors]
             differences = [t1 - t2 for t1, t2 in zip(summed, multiplied)]
             differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
@@ -453,11 +457,11 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensors = [self.tfe.Variable(self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype)) for _ in range(5)]
                     with tf.GradientTape(persistent=True) as tape:
-                        summed = hvd.grouped_allreduce(tensors, average=False)
+                        summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
                 else:
                     tensors = [self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype) for _ in range(5)]
-                    summed = hvd.grouped_allreduce(tensors, average=False)
+                    summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
 
                 grads_ys = [tf.ones([5] * dim, dtype=dtype) for _ in range(5)]
                 if _executing_eagerly():
@@ -495,7 +499,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                averaged = hvd.allreduce(tensor, average=True)
+                averaged = hvd.allreduce(tensor, op=hvd.Average)
             # handle int8, uint8 overflows when allreduce sums up and averages the values
             tensor = tf.cast((tensor*size)/size, dtype=dtype)
             difference = tf.cast(averaged, dtype=dtype) - tensor
@@ -625,7 +629,6 @@ class TensorFlowTests(BaseTensorFlowTests):
             if size <= 2 or dtype not in [tf.float16, tf.bfloat16, tf.float32, tf.float64]:
                 self.assertTrue(diff <= threshold, "hvd.allreduce produces incorrect results for product")
 
-
     def test_horovod_allreduce_average_grad_gpu(self):
         """Test the correctness of the allreduce with average gradient on GPU."""
         # Only do this test if there are GPUs available.
@@ -650,10 +653,10 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensor = self.tfe.Variable(
                         self.random_uniform([5] * dim, -100, 100, dtype=dtype))
                     with tf.GradientTape() as tape:
-                        averaged = hvd.allreduce(tensor, average=True)
+                        averaged = hvd.allreduce(tensor, op=hvd.Average)
                 else:
                     tensor = self.random_uniform([5] * dim, -100, 100, dtype=dtype)
-                    averaged = hvd.allreduce(tensor, average=True)
+                    averaged = hvd.allreduce(tensor, op=hvd.Average)
 
                 grad_ys = tf.ones([5] * dim, dtype=dtype)
                 if _executing_eagerly():
@@ -1372,6 +1375,112 @@ class TensorFlowTests(BaseTensorFlowTests):
                 self.assertTrue(diff <= threshold,
                                 "hvd.reducescatter on GPU produces incorrect results")
 
+    def test_horovod_reducescatter_gpu_prescale(self):
+        """Test that the reducescatter works on GPUs with prescaling."""
+        if not hvd.sycl_built():
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [tf.int32, tf.int64, tf.float16, tf.float32]
+        int_types = [tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(123456)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/xpu:%d" % local_rank):
+                factor = np.random.uniform()
+                maxval = 100 if dtype not in [tf.float16, tf.bfloat16] else 1
+                minval = -maxval
+                tensor = self.random_uniform([size * 4] * dim, minval, maxval, dtype=dtype)
+                reduced = hvd.reducescatter(tensor, op=hvd.Sum, prescale_factor=factor)
+
+                # Scaling done in FP64 math for integer types
+                tensor = tf.cast(tensor, tf.float64 if dtype in int_types else dtype)
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+                expected = tf.cast(factor * tensor[rank * 4:(rank + 1) * 4], reduced.dtype) * size
+                max_difference = tf.reduce_max(tf.abs(reduced - expected))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if dtype == tf.float16:
+                threshold = 1e-3
+            elif dtype == tf.bfloat16:
+                threshold = 1e-2
+            elif size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+            
+            diff = self.evaluate(max_difference)
+            if size <= 2 or dtype not in [tf.float16, tf.bfloat16]:
+                self.assertTrue(diff <= threshold,
+                                "hvd.reducescatter produces incorrect results")        
+
+    def test_horovod_reducescatter_gpu_postscale(self):
+        """Test on GPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
+        if not hvd.sycl_built():
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [tf.int32, tf.int64, tf.float16, tf.float32]
+        int_types = [tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(123456)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/xpu:%d" % local_rank):
+                factor = np.random.uniform()
+                maxval = 100 if dtype not in [tf.float16, tf.bfloat16] else 1
+                minval = -maxval
+                tensor = self.random_uniform([size * 4] * dim, minval, maxval, dtype=dtype)
+                reduced = hvd.reducescatter(tensor, op=hvd.Sum, postscale_factor=factor)
+
+                multiplied = tensor * size
+                # Scaling done in FP64 math for integer types.
+                multiplied = tf.cast(multiplied, tf.float64 if dtype in int_types else dtype)
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+
+                expected = tf.cast(factor * multiplied[rank * 4:(rank + 1) * 4], reduced.dtype)
+                max_difference = tf.reduce_max(tf.abs(reduced - expected))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if dtype == tf.float16:
+                threshold = 1e-3
+            elif dtype == tf.bfloat16:
+                threshold = 1e-2
+            elif size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+            
+            diff = self.evaluate(max_difference)
+            if size <= 2 or dtype not in [tf.float16, tf.bfloat16]:
+                self.assertTrue(diff <= threshold,
+                                "hvd.reducescatter produces incorrect results")
+
     def test_horovod_reducescatter_gpu_fused(self):
         """Test that the reducescatter works on GPUs with Tensor Fusion.
 
@@ -1626,6 +1735,114 @@ class TensorFlowTests(BaseTensorFlowTests):
                 self.assertTrue(diff <= threshold,
                                 "hvd.grouped_reducescatter on GPU produces incorrect results")
 
+    def test_horovod_grouped_reducescatter_gpu_prescale(self):
+        """Test on GPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
+        if not hvd.sycl_built():
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [tf.int32, tf.int64, tf.float16, tf.float32]
+        int_types = [tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/xpu:%d" % local_rank):
+                factor = np.random.uniform()
+                maxval = 100 if dtype not in [tf.float16, tf.bfloat16] else 1
+                minval = -maxval
+                tensors = [self.random_uniform([size * 4] * dim, minval, maxval, dtype=dtype) for _ in range(5)]
+                reduced = hvd.grouped_reducescatter(tensors, op=hvd.Sum, prescale_factor=factor)
+
+                # Scaling done in FP64 math for integer types
+                tensors = [tf.cast(t, tf.float64 if dtype in int_types else dtype) for t in tensors]
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+
+                expected = [tf.cast(factor * t[rank * 4:(rank + 1) * 4], reduced[0].dtype) * size
+                            for t in tensors]
+                max_difference = tf.reduce_max([tf.reduce_max(tf.abs(t1 - t2)) for t1, t2 in zip(reduced, expected)])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if dtype == tf.float16:
+                threshold = 1e-3
+            elif dtype == tf.bfloat16:
+                threshold = 1e-2
+            elif size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+            
+            diff = self.evaluate(max_difference)
+            if size <= 2 or dtype not in [tf.float16, tf.bfloat16]:
+                self.assertTrue(diff <= threshold,
+                                "hvd.grouped_reducescatter produces incorrect results")
+
+    def test_horovod_grouped_reducescatter_gpu_postscale(self):
+        """Test on GPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling"""
+        if not hvd.sycl_built():
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = [tf.int32, tf.int64, tf.float16, tf.float32]
+        int_types = [tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/xpu:%d" % local_rank):
+                factor = np.random.uniform()
+                maxval = 100 if dtype not in [tf.float16, tf.bfloat16] else 1
+                minval = -maxval
+                tensors = [self.random_uniform([size * 4] * dim, minval, maxval, dtype=dtype) for _ in range(5)]
+                reduced = hvd.grouped_reducescatter(tensors, op=hvd.Sum, postscale_factor=factor)
+
+                multiplied = [t * size for t in tensors]
+                # Scaling done in FP64 math for integer types
+                multiplied = [tf.cast(t, tf.float64 if dtype in int_types else dtype) for t in multiplied]
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+
+                expected = [tf.cast(factor * m[rank * 4:(rank + 1) * 4], reduced[0].dtype)
+                            for m in multiplied]
+                max_difference = tf.reduce_max([tf.reduce_max(tf.abs(t1 - t2)) for t1, t2 in zip(reduced, expected)])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if dtype == tf.float16:
+                threshold = 1e-3
+            elif dtype == tf.bfloat16:
+                threshold = 1e-2
+            elif size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+            
+            diff = self.evaluate(max_difference)
+            if size <= 2 or dtype not in [tf.float16, tf.bfloat16]:
+                self.assertTrue(diff <= threshold,
+                                "hvd.grouped_reducescatter produces incorrect results")
 
     def test_compression_fp16(self):
         valid_dtypes = [tf.float16, tf.float32, tf.float64]
@@ -1719,7 +1936,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                         if use_resource:
                             var = resource_variable_ops.ResourceVariable(initial_value)
                         else:
-                            var = tf_ops_variables.RefVariable(initial_value)
+                            var = RefVariable(initial_value)
                         init = tf.compat.v1.global_variables_initializer()
                         self.evaluate(init)
                     else:

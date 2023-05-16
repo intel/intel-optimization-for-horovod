@@ -104,6 +104,10 @@ def allreduce(tensor, average=None, device_dense='', device_sparse='',
         if op == Adasum:
             raise NotImplementedError('The Adasum reduction does not currently support sparse tensors. As a '
                                       'workaround please pass sparse_as_dense=True to DistributedOptimizer')
+        if op != Sum and op != Average:
+            raise NotImplementedError('Only Sum and Average ops are supported with tf.IndexedSlices')
+
+
         with tf.device(device_sparse):
             # For IndexedSlices, do two allgathers instead of an allreduce.
             horovod_size = tf.cast(size_op(process_set_id=process_set.process_set_id)
@@ -115,6 +119,8 @@ def allreduce(tensor, average=None, device_dense='', device_sparse='',
             # To make this operation into an average, divide allgathered values by
             # the Horovod size.
             new_values = (values / horovod_size) if op == Average else values
+            if (prescale_factor != 1.0 or postscale_factor != 1.0):
+                raise NotImplementedError("Pre/postscale_factor are not supported with tf.IndexedSlices")
         return tf.IndexedSlices(new_values, indices,
                                 dense_shape=tensor.dense_shape)
     else:
@@ -171,7 +177,8 @@ def allreduce(tensor, average=None, device_dense='', device_sparse='',
 
 def reducescatter(tensor, device_dense='', compression=Compression.none, op=Average,
                   name=None, process_set=global_process_set,
-                  ignore_name_scope=False):
+                  ignore_name_scope=False,
+                  prescale_factor=1.0, postscale_factor=1.0):
     """Perform a reducescatter on a tf.Tensor.
 
     This function performs a bandwidth-optimal reduce and scatter on the input
@@ -192,25 +199,34 @@ def reducescatter(tensor, device_dense='', compression=Compression.none, op=Aver
         name: A name of the reduce_scatter operation
         ignore_name_scope: If True, ignores any outer name scope applied by
                            TensorFlow in the name used by the Horovod operation.
+        prescale_factor: Multiplicative factor to scale tensor before reducescatter.
+        postscale_factor: Multiplicative factor to scale tensor after reducescatter.
 
     Returns:
         A tensor of the same rank and type as `tensor`, summed across all processes.
         The shape is identical to the input shape, except for the first dimension,
         which will be divided across the different Horovod processes.
     """
-    # Averaging happens in framework code, so translate that to Sum for the actual call
-    true_op = Sum if op == Average else op
+    if rocm_built() and op == Average:
+        # Need to average in framework code
+        true_op = Sum
+    else:
+        true_op = op
 
     with tf.device(device_dense):
-        horovod_size = tf.cast(size_op(process_set_id=process_set.process_set_id)
-                               if int(os.environ.get("HOROVOD_ELASTIC", 0)) else process_set.size(),
-                               dtype=tensor.dtype)
         tensor_compressed, ctx = compression.compress(tensor)
         reduced_tensor_compressed = _reducescatter(tensor_compressed, op=true_op, name=name, process_set=process_set,
-                                                   ignore_name_scope=ignore_name_scope)
+                                                   ignore_name_scope=ignore_name_scope, prescale_factor=prescale_factor,
+                                                   postscale_factor=postscale_factor)
         reduced_tensor = compression.decompress(reduced_tensor_compressed, ctx)
-        new_tensor = (reduced_tensor / horovod_size) if op == Average else reduced_tensor
-    return new_tensor
+        if op == Average and true_op == Sum:
+            horovod_size = tf.cast(size_op(process_set_id=process_set.process_set_id)
+                                   if int(os.environ.get("HOROVOD_ELASTIC", 0)) else process_set.size(),
+                                   dtype=tensor.dtype)
+            new_tensor = reduced_tensor / horovod_size
+            return new_tensor
+        else:
+            return reduced_tensor
 
 
 def grouped_allreduce(tensors, average=None, device_dense='', device_sparse='',
@@ -263,29 +279,54 @@ def grouped_allreduce(tensors, average=None, device_dense='', device_sparse='',
         average_in_framework = op == Average or op == Adasum
         op = Sum if op == Average else op
 
-    if any(isinstance(t, tf.IndexedSlices) for t in tensors):
+    # Split list of tensors into indexed slices and normal tensors to handle separately.
+    tensor_list, tensor_list_idx = [], []
+    indexed_slices_list, indexed_slices_list_idx = [], []
+    new_tensors_merged = [None] * len(tensors)
+
+    for i, t in enumerate(tensors):
+        if isinstance(t, tf.IndexedSlices):
+            indexed_slices_list.append(t)
+            indexed_slices_list_idx.append(i)
+        else:
+            tensor_list.append(t)
+            tensor_list_idx.append(i)
+
+    if indexed_slices_list:
         # TODO: Need to fix this to actuall call Adasum
         if op == Adasum:
             raise NotImplementedError('The Adasum reduction does not currently support sparse tensors. As a '
                                       'workaround please pass sparse_as_dense=True to DistributedOptimizer')
+        if op != Sum and op != Average:
+            raise NotImplementedError('Only Sum and Average ops are supported with tf.IndexedSlices')
+
         with tf.device(device_sparse):
             new_values = []
-            for tensor in tensors:
-                # For IndexedSlices, do two allgathers instead of an allreduce.
+            new_indices = []
+            # For IndexedSlices, do two grouped_allgathers instead of a grouped_allreduce.
+            values = grouped_allgather([x.values for x in indexed_slices_list], process_set=process_set,
+                                       ignore_name_scope=ignore_name_scope)
+            new_indices = grouped_allgather([x.indices for x in indexed_slices_list], process_set=process_set,
+                                            ignore_name_scope=ignore_name_scope)
+
+            # To make this operation into an average, divide allgathered values by
+            # the Horovod size.
+            for x in values:
                 horovod_size = tf.cast(size_op(process_set_id=process_set.process_set_id)
                                        if int(os.environ.get("HOROVOD_ELASTIC", 0)) else process_set.size(),
-                                       dtype=tensor.values.dtype)
-                values = allgather(tensor.values, process_set=process_set, ignore_name_scope=ignore_name_scope)
-                indices = allgather(tensor.indices, process_set=process_set, ignore_name_scope=ignore_name_scope)
+                                       dtype=x.dtype)
+                new_values.append(x / horovod_size if op == Average else x)
+            if (prescale_factor != 1.0 or postscale_factor != 1.0):
+                raise NotImplementedError("Pre/postscale_factor are not supported with tf.IndexedSlices")
+        new_indexed_slices = [tf.IndexedSlices(x, i,
+                                               dense_shape=t.dense_shape) for x,i,t in zip(new_values, new_indices, tensors)]
 
-                # To make this operation into an average, divide allgathered values by
-                # the Horovod size.
-                new_values += (values / horovod_size) if op == Average else values
-        return [tf.IndexedSlices(x, indices,
-                                 dense_shape=t.dense_shape) for x,t in zip(new_values, tensors)]
-    else:
+        for idx, indexed_slice in zip(indexed_slices_list_idx, new_indexed_slices):
+            new_tensors_merged[idx] = indexed_slice
+
+    if tensor_list:
         with tf.device(device_dense):
-            tensors_compressed, ctxs = zip(*[compression.compress(tensor) for tensor in tensors])
+            tensors_compressed, ctxs = zip(*[compression.compress(tensor) for tensor in tensor_list])
             summed_tensors_compressed = _grouped_allreduce(tensors_compressed, op=op,
                                                            prescale_factor=prescale_factor,
                                                            postscale_factor=postscale_factor,
@@ -331,7 +372,11 @@ def grouped_allreduce(tensors, average=None, device_dense='', device_sparse='',
                         new_tensors += (tensor / horovod_size) if average_in_framework else tensor
                 else:
                     new_tensors = summed_tensors
-        return new_tensors
+
+        for idx, tensor in zip(tensor_list_idx, new_tensors):
+            new_tensors_merged[idx] = tensor
+
+    return new_tensors_merged
 
 
 def _allreduce_cond(tensor, *args, process_set=global_process_set, **kwargs):
@@ -341,12 +386,16 @@ def _allreduce_cond(tensor, *args, process_set=global_process_set, **kwargs):
     def id_fn():
         return tensor
 
-    return tf.cond(tf.logical_and(
-        tf.equal(process_set_included_op(process_set.process_set_id), 1),
-        tf.greater(size_op(process_set.process_set_id), 1))
-                   if int(os.environ.get("HOROVOD_ELASTIC", 0)) else (
-        tf.convert_to_tensor(process_set.included() and process_set.size() > 1)),
-                   allreduce_fn, id_fn)
+    with tf.device("cpu"):
+        if int(os.environ.get("HOROVOD_ELASTIC", 0)):
+            cond = tf.logical_and(
+                tf.equal(process_set_included_op(process_set.process_set_id), 1),
+                tf.greater(size_op(process_set.process_set_id), 1)
+            )
+        else:
+            cond = tf.convert_to_tensor(process_set.included() and process_set.size() > 1)
+
+    return tf.cond(cond, allreduce_fn, id_fn)
 
 
 def _grouped_allreduce_cond(tensors, *args, process_set=global_process_set, **kwargs):
@@ -356,16 +405,20 @@ def _grouped_allreduce_cond(tensors, *args, process_set=global_process_set, **kw
     def id_fn():
         return tensors
 
-    return tf.cond(tf.logical_and(
-        tf.equal(process_set_included_op(process_set.process_set_id), 1),
-        tf.greater(size_op(process_set.process_set_id), 1))
-                   if int(os.environ.get("HOROVOD_ELASTIC", 0)) else (
-        tf.convert_to_tensor(process_set.included() and process_set.size() > 1)),
-                   allreduce_fn, id_fn)
+    with tf.device("cpu"):
+        if int(os.environ.get("HOROVOD_ELASTIC", 0)):
+            cond = tf.logical_and(
+                tf.equal(process_set_included_op(process_set.process_set_id), 1),
+                tf.greater(size_op(process_set.process_set_id), 1)
+            )
+        else:
+            cond = tf.convert_to_tensor(process_set.included() and process_set.size() > 1)
+
+    return tf.cond(cond, allreduce_fn, id_fn)
 
 
 def grouped_reducescatter(tensors, device_dense='', compression=Compression.none, op=Average,
-                          process_set=global_process_set):
+                          process_set=global_process_set, prescale_factor=1.0, postscale_factor=1.0):
     """Perform grouped reducescatters on a sequence of tf.Tensor.
 
     Arguments:
@@ -383,6 +436,8 @@ def grouped_reducescatter(tensors, device_dense='', compression=Compression.none
             Defaults to Average if None is given.
         process_set: Process set object to limit this operation to a subset of
             Horovod processes. Default is the global process set.
+        prescale_factor: Multiplicative factor to scale tensors before reducescatter.
+        postscale_factor: Multiplicative factor to scale tensors after reducescatter.
 
     Returns:
         A list of tensors of the same rank and type as those in `tensors`,
@@ -392,18 +447,26 @@ def grouped_reducescatter(tensors, device_dense='', compression=Compression.none
     """
     if not tensors:
         return tensors
-    # Averaging happens in framework code, so translate that to Sum for the actual call
-    true_op = Sum if op == Average else op
-    dtype = tensors[0].dtype  # HorovodGroupedReducescatterOp requires all input tensors to have the same dtype
+    if rocm_built() and op == Average:
+        # Need to average in framework code
+        true_op = Sum
+    else:
+        true_op = op
     with tf.device(device_dense):
-        horovod_size = tf.cast(size_op(process_set_id=process_set.process_set_id)
-                               if int(os.environ.get("HOROVOD_ELASTIC", 0)) else process_set.size(),
-                               dtype=dtype)
         tensors_compressed, ctxs = zip(*[compression.compress(tensor) for tensor in tensors])
-        reduced_tensors_compressed = _grouped_reducescatter(tensors_compressed, op=true_op, process_set=process_set)
+        reduced_tensors_compressed = _grouped_reducescatter(tensors_compressed, op=true_op, process_set=process_set,
+                                                            prescale_factor=prescale_factor,
+                                                            postscale_factor=postscale_factor)
         reduced_tensors = [compression.decompress(t, ctx) for t, ctx in zip(reduced_tensors_compressed, ctxs)]
-        new_tensors = [(rt / horovod_size) for rt in reduced_tensors] if op == Average else reduced_tensors
-    return new_tensors
+        if op == Average and true_op == Sum:
+            dtype = tensors[0].dtype  # HorovodGroupedReducescatterOp requires all input tensors to have the same dtype
+            horovod_size = tf.cast(size_op(process_set_id=process_set.process_set_id)
+                                   if int(os.environ.get("HOROVOD_ELASTIC", 0)) else process_set.size(),
+                                   dtype=dtype)
+            new_tensors = [(rt / horovod_size) for rt in reduced_tensors]
+            return new_tensors
+        else:
+            return reduced_tensors
 
 
 try:
@@ -625,13 +688,14 @@ if _LegacyOptimizer is not None:
                     rank=rank(),
                     optimizer_type=LocalGradientAggregationHelper._OPTIMIZER_TYPE_LEGACY,
                     process_set=process_set,
-                    scale_local_gradients=scale_local_gradients
+                    scale_local_gradients=scale_local_gradients,
+                    name=name,
                 )
 
         def register_local_var(self, var):
             """Registers a source/variable as worker local. Horovod will not perform any global
             operations on gradients corresponding to these sources and will instead return the local
-            gradient."""    
+            gradient."""
             if self._agg_helper:
                 self._agg_helper.register_local_var(var)
             elif _IS_TF2:
@@ -678,7 +742,12 @@ if _LegacyOptimizer is not None:
                             # Scale local gradients by a size factor. See pull/3695 and discussions/3705 for context.
                             for v_ref in v2g:
                                 if v_ref in self._local_vars and v2g[v_ref]:
-                                    v2g[v.ref()] /= horovod_size
+                                    grad = v2g[v_ref]
+                                    if isinstance(grad, tf.IndexedSlices):
+                                        grad = tf.IndexedSlices(grad.values / horovod_size, grad.indices, grad.dense_shape)
+                                    else:
+                                        grad /= horovod_size
+                                    v2g[v_ref] = grad
 
                         return [v2g[rv.ref()] for rv in vars]
                     else:
@@ -689,7 +758,12 @@ if _LegacyOptimizer is not None:
                             # Scale local gradients by a size factor. See pull/3695 and discussions/3705 for context.
                             for v in v2g:
                                 if v in self._local_vars and v2g[v]:
-                                    v2g[v] /= horovod_size
+                                    grad = v2g[v]
+                                    if isinstance(grad, tf.IndexedSlices):
+                                        grad = tf.IndexedSlices(grad.values / horovod_size, grad.indices, grad.dense_shape)
+                                    else:
+                                        grad /= horovod_size
+                                    v2g[v] = grad
 
                         return [v2g[rv] for rv in vars]
 
@@ -930,7 +1004,7 @@ def DistributedOptimizer(optimizer, name=None, use_locking=False, device_dense='
             process_set=process_set,
             scale_local_gradients=scale_local_gradients
         )
-    elif isinstance(optimizer, tf.keras.optimizers.Optimizer):
+    else:
         if op == Adasum:
             raise ValueError('op == Adasum is not supported yet with Keras')
 
@@ -948,9 +1022,6 @@ def DistributedOptimizer(optimizer, name=None, use_locking=False, device_dense='
             process_set=process_set,
             scale_local_gradients=scale_local_gradients
         )
-    else:
-        raise ValueError('Provided optimizer doesn\'t inherit from either legacy '
-                         'TensorFlow or Keras optimizer: %s' % optimizer)
 
 
 if hasattr(tf, 'GradientTape'):
@@ -1013,7 +1084,12 @@ if hasattr(tf, 'GradientTape'):
                     # Scale local gradients by a size factor. See pull/3695 and discussions/3705 for context.
                     for s_ref in s2g:
                         if s_ref in self._local_sources and s2g[s_ref] is not None:
-                            s2g[s_ref] /= horovod_size
+                            grad = s2g[s_ref]
+                            if isinstance(grad, tf.IndexedSlices):
+                                grad = tf.IndexedSlices(grad.values / horovod_size, grad.indices, grad.dense_shape)
+                            else:
+                                grad /= horovod_size
+                            s2g[s_ref] = grad
 
                 return [s2g[s.ref()] for s in sources]
             else:
@@ -1024,9 +1100,27 @@ if hasattr(tf, 'GradientTape'):
                     # Scale local gradients by a size factor. See pull/3695 and discussions/3705 for context.
                     for s in s2g:
                         if s in self._local_sources and s2g[s] is not None:
-                            s2g[s] /= horovod_size
+                            grad = s2g[s]
+                            if isinstance(grad, tf.IndexedSlices):
+                                grad = tf.IndexedSlices(grad.values / horovod_size, grad.indices, grad.dense_shape)
+                            else:
+                                grad /= horovod_size
+                            s2g[s] = grad
 
                 return [s2g[s] for s in sources]
+
+        def get_local_and_global_gradients(self, target, sources, output_gradients=None, use_generic_names=False):
+            gradients = self.gradient(target=target, sources=sources, output_gradients=output_gradients, use_generic_names=use_generic_names)
+            # gradients are in the same order as sources.
+            local_vars_grads, global_vars_grads = [], []
+            for s, g in zip(sources, gradients):
+                is_local_source = s.ref() in self._local_sources if _IS_TF2 else s in self._local_sources
+                if is_local_source:
+                    local_vars_grads.append((s,g))
+                else:
+                    global_vars_grads.append((s,g))
+            del gradients
+            return local_vars_grads, global_vars_grads
 
     def DistributedGradientTape(gradtape, device_dense='', device_sparse='',
                                 compression=Compression.none, sparse_as_dense=False,

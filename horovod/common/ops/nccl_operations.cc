@@ -21,6 +21,13 @@
 #include "../mpi/mpi_context.h"
 #endif
 
+#if HAVE_CUDA
+#include "cuda/cuda_kernels.h"
+#endif
+#if HAVE_ROCM
+#include "rocm/hip_kernels.h"
+#endif
+
 namespace horovod {
 namespace common {
 
@@ -712,8 +719,6 @@ Status NCCLTorusAllreduce::Execute(std::vector<TensorTableEntry>& entries,
                                        ? num_elements % local_size
                                        : num_elements;
 
-  size_t buffer_len_remaining = element_size * num_elements_remaining;
-
   void* buffer_data_remainder =
       (uint8_t*)buffer_data + buffer_len_per_rank * local_size;
 
@@ -726,9 +731,6 @@ Status NCCLTorusAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   int64_t total_num_elements =
       is_root_rank ? num_elements_per_rank + num_elements_remaining
                    : num_elements_per_rank;
-  int64_t total_buffer_len = is_root_rank
-                                 ? buffer_len_per_rank + buffer_len_remaining
-                                 : buffer_len_per_rank;
 
   auto& timeline = global_state_->timeline;
   if (num_elements_per_rank > 0) {
@@ -903,8 +905,7 @@ Status NCCLBroadcast::Execute(std::vector<TensorTableEntry>& entries,
 
 Status NCCLAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
                                    const Response& response,
-                                   int64_t**& entry_component_sizes,
-                                   int*& recvcounts) {
+                                   int64_t**& entry_component_sizes) {
   for (size_t ec = 0; ec < entries.size(); ++ec) {
     auto& e = entries[ec];
     auto& process_set = global_state_->process_set_table.Get(e.process_set_id);
@@ -924,10 +925,6 @@ Status NCCLAllgather::AllocateOutput(std::vector<TensorTableEntry>& entries,
     for (int rc = 0; rc < global_size; ++rc) {
       auto component_size = tensor_sizes[ec * global_size + rc];
       total_entry_dimension_size += component_size;
-
-      if (recvcounts) {
-        recvcounts[rc] += component_size * single_slice_shape.num_elements();
-      }
 
       if (entry_component_sizes) {
         entry_component_sizes[ec][rc] =
@@ -1008,7 +1005,7 @@ Status NCCLAllgather::Execute(std::vector<TensorTableEntry>& entries,
 
   global_state_->timeline.ActivityStartAll(entries, ALLOCATE_OUTPUT);
   Status status =
-      AllocateOutput(entries, response, entry_component_sizes, recvcounts);
+      AllocateOutput(entries, response, entry_component_sizes);
   if (!status.ok()) {
     for (size_t ec = 0; ec < entries.size(); ++ec) {
       delete[] entry_component_sizes[ec];
@@ -1022,11 +1019,18 @@ Status NCCLAllgather::Execute(std::vector<TensorTableEntry>& entries,
   }
   global_state_->timeline.ActivityEndAll(entries);
 
-  SetDisplacements(recvcounts, displcmnts, global_size);
-  SetEntryComponentOffsets(entries, entry_component_sizes, recvcounts,
-                           entry_component_offsets);
+  auto element_size = (int)DataType_Size(first_entry.tensor->dtype());
+  int padding_elements = 1;
+  if (entries.size() > 1) {
+    assert(BATCHED_D2D_PADDING % element_size == 0);
+    padding_elements = BATCHED_D2D_PADDING / element_size;
+  }
 
-  size_t element_size = DataType_Size(first_entry.tensor->dtype());
+  SetRecvcounts(entry_component_sizes, entries.size(), global_size, recvcounts,
+                padding_elements);
+  SetDisplacements(recvcounts, displcmnts, global_size);
+  SetEntryComponentOffsets(entry_component_sizes, recvcounts, entries.size(),
+                           global_size, entry_component_offsets);
 
   const void* fused_input_data;
   void* buffer_data;
@@ -1057,7 +1061,7 @@ Status NCCLAllgather::Execute(std::vector<TensorTableEntry>& entries,
         break;
       }
     }
-    if (same_shape == false) {
+    if (!same_shape) {
       break;
     }
   }
@@ -1227,35 +1231,43 @@ Status NCCLReducescatter::Execute(std::vector<TensorTableEntry>& entries,
 
   WaitForData(entries);
 
+  double prescale_factor = response.prescale_factor();
+  double postscale_factor = response.postscale_factor();
+
   int process_set_rank = process_set.controller->GetRank();
   int process_set_size = process_set.controller->GetSize();
   auto output_shapes = ComputeOutputShapes(entries, process_set_size);
   std::vector<int> recvcounts = ComputeReceiveCounts(output_shapes);
 
-  global_state_->timeline.ActivityStartAll(entries, ALLOCATE_OUTPUT);
-  Status status = AllocateOutput(entries, output_shapes[process_set_rank]);
-  if (!status.ok()) {
-    return status;
-  }
-  global_state_->timeline.ActivityEndAll(entries);
-
   size_t element_size = DataType_Size(first_entry.tensor->dtype());
-  void* buffer_data = nullptr;
   void* recv_pointer = nullptr;
   const void* fused_input_data = nullptr;
 
-  // Copy memory into the fusion buffer.
-  if (entries.size() > 1) {
-    MemcpyInFusionBuffer(entries, output_shapes, element_size, buffer_data);
+  // Copy memory into the fusion buffer. Execute prescaling op if necessary.
+  if (entries.size() > 1 || prescale_factor != 1.0) {
+    void* buffer_data = nullptr;
+    ScaleMemcpyInFusionBuffer(entries, output_shapes, element_size, buffer_data,
+                              prescale_factor);
     fused_input_data = buffer_data;
-    recv_pointer = reinterpret_cast<int8_t*>(buffer_data) +
-                   process_set_rank * recvcounts[0] * element_size;
-    // ncclReduceScatter() will be performed in place on the fusion buffer, cf.:
-    // https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/inplace.html
+    if (entries.size() == 1) {
+      // Unfused prescaled: Send from fusion buffer, receive at output tensor
+      recv_pointer = (void*)first_entry.output->data();
+    } else {
+      // Fused: ncclReduceScatter() in place on the fusion buffer, cf.:
+      // https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/inplace.html
+      recv_pointer = reinterpret_cast<int8_t*>(buffer_data) +
+                     process_set_rank * recvcounts[0] * element_size;
+    }
+
+    if (global_state_->timeline.Initialized()) {
+      gpu_context_->RecordEvent(gpu_op_context_.event_queue,
+                                MEMCPY_IN_FUSION_BUFFER,
+                                *gpu_op_context_.stream);
+    }
   } else {
+    // Unfused without prescaling
     fused_input_data = first_entry.tensor->data();
-    buffer_data = (void*)first_entry.output->data();
-    recv_pointer = buffer_data;
+    recv_pointer = (void*)first_entry.output->data();
   }
 
   // If a reduced tensor cannot be scattered evenly over the participating processes, the first ranks 0, ...,
@@ -1305,12 +1317,21 @@ Status NCCLReducescatter::Execute(std::vector<TensorTableEntry>& entries,
 
   // Copy memory out of the fusion buffer.
   if (entries.size() > 1) {
-    MemcpyOutFusionBuffer(recv_pointer, entries);
+    ScaleMemcpyOutFusionBuffer(recv_pointer, postscale_factor, entries);
 
     if (global_state_->timeline.Initialized()) {
       gpu_context_->RecordEvent(gpu_op_context_.event_queue,
                                 MEMCPY_OUT_FUSION_BUFFER,
                                 *gpu_op_context_.stream);
+    }
+  } else {
+    if (postscale_factor != 1.0) {
+      // Execute postscaling ops
+      for (auto& e : entries) {
+        ScaleBuffer(postscale_factor, entries, e.output->data(),
+                    const_cast<void*>(e.output->data()),
+                    e.output->shape().num_elements());
+      }
     }
   }
 
@@ -1322,31 +1343,6 @@ bool NCCLReducescatter::Enabled(const ParameterManager& param_manager,
                                 const std::vector<TensorTableEntry>& entries,
                                 const Response& response) const {
   return entries[0].device != CPU_DEVICE_ID;
-}
-
-Status NCCLReducescatter::AllocateOutput(
-    std::vector<TensorTableEntry>& entries, const std::vector<TensorShape>& output_shapes) {
-  for (size_t ec = 0; ec < entries.size(); ++ec) {
-    auto& e = entries[ec];
-    const auto& output_shape = output_shapes[ec];
-
-    std::shared_ptr<ReadyEvent> event;
-    Status status = e.context->AllocateOutput(e.output_index, output_shape,
-                                              &e.output, &event);
-    if (!status.ok()) {
-      LOG(WARNING) << "NCCLReducescatter::AllocateOutput failed: "
-                   << status.reason();
-      return status;
-    }
-
-    // Add event dependency for output allocation to stream
-    if (event) {
-      HVD_GPU_CHECK(gpuStreamWaitEvent(*gpu_op_context_.stream, event->event(), 0));
-    }
-
-  }
-
-  return Status::OK();
 }
 
 void NCCLReducescatter::WaitForData(std::vector<TensorTableEntry>& entries) {

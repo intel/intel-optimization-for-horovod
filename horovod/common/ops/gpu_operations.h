@@ -206,7 +206,6 @@ public:
                const Response& response) const override;
 
 protected:
-#if HAVE_GPU && !HAVE_SYCL
   void MemcpyInFusionBuffer(const std::vector<TensorTableEntry>& entries,
                             const int* displcmnts, int element_size,
                             void*& buffer_data) override;
@@ -215,7 +214,6 @@ protected:
                              const int64_t* const* entry_component_sizes,
                              const void* buffer_data, int element_size,
                              std::vector<TensorTableEntry>& entries) override;
-#endif
   void MemcpyEntryInFusionBuffer(const std::vector<TensorTableEntry>& entries,
                                  const TensorTableEntry& e,
                                  void* buffer_data_at_offset) override;
@@ -270,15 +268,27 @@ protected:
   void MemcpyEntryOutFusionBuffer(const void* buffer_data_at_offset,
                                   TensorTableEntry& e) override;
 
-#if HAVE_GPU && !HAVE_SYCL
   void MemcpyInFusionBuffer(
       const std::vector<TensorTableEntry>& entries,
       const std::vector<std::vector<TensorShape>>& output_shapes,
-      std::size_t element_size, void*& buffer_data) override;
+      std::size_t element_size, void*& buffer_data,
+      size_t& buffer_len) override;
+
+  void ScaleMemcpyInFusionBuffer(
+      const std::vector<TensorTableEntry>& entries,
+      const std::vector<std::vector<TensorShape>>& output_shapes,
+      std::size_t element_size, void*& buffer_data, double scale_factor);
 
   void MemcpyOutFusionBuffer(const void* buffer_data,
                              std::vector<TensorTableEntry>& entries) override;
-#endif // HAVE_GPU
+
+  void ScaleMemcpyOutFusionBuffer(const void* buffer_data, double scale_factor,
+                                  std::vector<TensorTableEntry>& entries);
+
+  void ScaleBuffer(double scale_factor,
+                   const std::vector<TensorTableEntry>& entries,
+                   const void* fused_input_data, void* buffer_data,
+                   int64_t num_elements) override;
 
   GPUContext* gpu_context_;
   GPUOpContext gpu_op_context_;

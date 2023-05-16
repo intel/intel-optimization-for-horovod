@@ -30,7 +30,11 @@ import sys
 import tensorflow as tf
 from horovod.tensorflow.util import _executing_eagerly
 from tensorflow.python.ops import resource_variable_ops
-from tensorflow.python.ops import variables as tf_ops_variables
+try:
+    from tensorflow.python.ops.variables import RefVariable
+except ImportError:
+    # TF 2.13+
+    from tensorflow.python.ops.ref_variable import RefVariable
 
 sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, 'utils'))
 
@@ -126,7 +130,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -158,7 +162,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                averaged = hvd.allreduce(tensor, average=True)
+                averaged = hvd.allreduce(tensor, op=hvd.Average)
             # handle int8, uint8 overflows when allreduce sums up and averages the values
             tensor = tf.cast((tensor*size)/size, dtype=dtype)
             difference = tf.cast(averaged, dtype=dtype) - tensor
@@ -269,7 +273,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -310,7 +314,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False,
+                summed = hvd.allreduce(tensor, op=hvd.Sum,
                                        prescale_factor=factor)
 
                 # Scaling done in FP64 math for integer types, FP32 math for FP16 on CPU
@@ -354,7 +358,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False,
+                summed = hvd.allreduce(tensor, op=hvd.Sum,
                                        postscale_factor=factor)
 
                 multiplied = tensor * size
@@ -383,6 +387,237 @@ class TensorFlowTests(BaseTensorFlowTests):
             self.assertTrue(diff <= threshold,
                             "hvd.allreduce produces incorrect results")
 
+    def test_horovod_allreduce_indexed_slices_cpu(self):
+        """Test on CPU that the allreduce correctly sums tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                # prevent underflows/overflows in uint8, int8
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = self.random_uniform([17] * dim, minval, maxval)
+                slice_values = tf.cast(slice_values, dtype=dtype)
+                tensor = tf.IndexedSlices(tf.stack([slice_values] * 2),
+                                          tf.convert_to_tensor([hvd.rank(), hvd.rank()+1]))
+                result = hvd.allreduce(tensor, average=False)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            keys = result.indices
+            result = tf.math.unsorted_segment_sum(result.values, keys, tf.size(tf.unique(keys)[0]))
+
+            slices = [slice_values] * (hvd.size() + 1)
+            for i in range(1, hvd.size()):
+                slices[i] *= 2
+            reference = tf.stack(slices)
+
+            difference = result - reference
+            difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
+            max_difference = tf.reduce_max(tf.abs(difference))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.allreduce produces incorrect results")
+
+    def test_horovod_allreduce_indexed_slices_average_cpu(self):
+        """Test on CPU that the allreduce correctly averages tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                # prevent underflows/overflows in uint8, int8
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = self.random_uniform([17] * dim, minval, maxval)
+                slice_values = tf.cast(slice_values, dtype=dtype)
+                tensor = tf.IndexedSlices(tf.stack([slice_values] * 2),
+                                          tf.convert_to_tensor([hvd.rank(), hvd.rank()+1]))
+                result = hvd.allreduce(tensor, op=hvd.Average)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            keys = result.indices
+            result = tf.math.unsorted_segment_sum(result.values, keys, tf.size(tf.unique(keys)[0]))
+
+            slices = [slice_values] * (hvd.size() + 1)
+            for i in range(0, hvd.size()+1):
+                if i == 0 or i == hvd.size():
+                    slices[i] /= hvd.size()
+                else:
+                    slices[i] *= 2
+                    slices[i] /= hvd.size()
+            reference = tf.stack(slices)
+
+            difference = result - reference
+            difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
+            max_difference = tf.reduce_max(tf.abs(difference))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.allreduce produces incorrect results")
+
+
+    def test_horovod_allreduce_indexed_slices_gpu(self):
+        """Test on GPU that the allreduce correctly sums tf.IndexedSlices."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        local_rank = hvd.local_rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % local_rank):
+                # prevent underflows/overflows in uint8, int8
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = self.random_uniform([17] * dim, minval, maxval)
+                slice_values = tf.cast(slice_values, dtype=dtype)
+                tensor = tf.IndexedSlices(tf.stack([slice_values] * 2),
+                                          tf.convert_to_tensor([hvd.rank(), hvd.rank()+1]))
+                result = hvd.allreduce(tensor, average=False)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            keys = result.indices
+            result = tf.math.unsorted_segment_sum(result.values, keys, tf.size(tf.unique(keys)[0]))
+
+            slices = [slice_values] * (hvd.size() + 1)
+            for i in range(1, hvd.size()):
+                slices[i] *= 2
+            reference = tf.stack(slices)
+
+            difference = result - reference
+            difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
+            max_difference = tf.reduce_max(tf.abs(difference))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.allreduce produces incorrect results")
+
+    def test_horovod_allreduce_indexed_slices_average_gpu(self):
+        """Test on GPU that the allreduce correctly averages tf.IndexedSlices."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        local_rank = hvd.local_rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % local_rank):
+                # prevent underflows/overflows in uint8, int8
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = self.random_uniform([17] * dim, minval, maxval)
+                slice_values = tf.cast(slice_values, dtype=dtype)
+                tensor = tf.IndexedSlices(tf.stack([slice_values] * 2),
+                                          tf.convert_to_tensor([hvd.rank(), hvd.rank()+1]))
+                result = hvd.allreduce(tensor, op=hvd.Average)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            keys = result.indices
+            result = tf.math.unsorted_segment_sum(result.values, keys, tf.size(tf.unique(keys)[0]))
+
+            slices = [slice_values] * (hvd.size() + 1)
+            for i in range(0, hvd.size()+1):
+                if i == 0 or i == hvd.size():
+                    slices[i] /= hvd.size()
+                else:
+                    slices[i] *= 2
+                    slices[i] /= hvd.size()
+            reference = tf.stack(slices)
+
+            difference = result - reference
+            difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
+            max_difference = tf.reduce_max(tf.abs(difference))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.allreduce produces incorrect results")
+
+    def test_horovod_allreduce_indexed_slices_op_error(self):
+        """Tests that the allreduce errors out on unsupported op for tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        tensor = tf.IndexedSlices(tf.ones(1,3),
+                                  tf.convert_to_tensor([hvd.rank()]))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.allreduce(tensor, op=hvd.Min))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.allreduce(tensor, op=hvd.Max))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.allreduce(tensor, op=hvd.Product))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.allreduce(tensor, op=hvd.Adasum))
+
+    def test_horovod_allreduce_indexed_slices_prescale_postscale_error(self):
+        """Test on CPU that the allreduce correctly errors with tf.IndexedSlices with pre/postscaling."""
+        hvd.init()
+        factor = 0.5
+        tensor = tf.IndexedSlices(tf.ones(1,3),
+                                  tf.convert_to_tensor([hvd.rank()]))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.allreduce(tensor, average=False,
+                                        prescale_factor=factor))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.allreduce(tensor, average=False,
+                                        postscale_factor=factor))
+
     def test_horovod_allreduce_gpu(self):
         """Test that the allreduce works on GPUs."""
         # Only do this test if there are GPUs available.
@@ -405,7 +640,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -447,7 +682,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                averaged = hvd.allreduce(tensor, average=True)
+                averaged = hvd.allreduce(tensor, op=hvd.Average)
             # handle int8, uint8 overflows when allreduce sums up and averages the values
             tensor = tf.cast((tensor*size)/size, dtype=dtype)
             difference = tf.cast(averaged, dtype=dtype) - tensor
@@ -598,7 +833,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -654,7 +889,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
+                summed = hvd.allreduce(tensor, op=hvd.Sum)
             multiplied = tensor * size
             difference = summed - multiplied
             difference = tf.cast(difference, tf.int32) if dtype == tf.uint8 else difference
@@ -701,7 +936,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False,
+                summed = hvd.allreduce(tensor, op=hvd.Sum,
                                        prescale_factor=factor)
 
                 # Scaling done in FP64 math for integer types.
@@ -752,7 +987,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensor = self.random_uniform([17] * dim, minval, maxval)
                 tensor = tf.cast(tensor, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False,
+                summed = hvd.allreduce(tensor, op=hvd.Sum,
                                        postscale_factor=factor)
 
                 multiplied = tensor * size
@@ -865,11 +1100,11 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensor = self.tfe.Variable(self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype))
                     with tf.GradientTape() as tape:
-                        summed = hvd.allreduce(tensor, average=False)
+                        summed = hvd.allreduce(tensor, op=hvd.Sum)
                 else:
                     tensor = self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype)
-                    summed = hvd.allreduce(tensor, average=False)
+                    summed = hvd.allreduce(tensor, op=hvd.Sum)
 
                 grad_ys = tf.ones([5] * dim)
                 if _executing_eagerly():
@@ -899,11 +1134,11 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensor = self.tfe.Variable(self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype))
                     with tf.GradientTape() as tape:
-                        averaged = hvd.allreduce(tensor, average=True)
+                        averaged = hvd.allreduce(tensor, op=hvd.Average)
                 else:
                     tensor = self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype)
-                    averaged = hvd.allreduce(tensor, average=True)
+                    averaged = hvd.allreduce(tensor, op=hvd.Average)
 
                 grad_ys = tf.ones([5] * dim, dtype=dtype)
                 if _executing_eagerly():
@@ -942,10 +1177,10 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensor = self.tfe.Variable(
                         self.random_uniform([5] * dim, -100, 100, dtype=dtype))
                     with tf.GradientTape() as tape:
-                        summed = hvd.allreduce(tensor, average=False)
+                        summed = hvd.allreduce(tensor, op=hvd.Sum)
                 else:
                     tensor = self.random_uniform([5] * dim, -100, 100, dtype=dtype)
-                    summed = hvd.allreduce(tensor, average=False)
+                    summed = hvd.allreduce(tensor, op=hvd.Sum)
 
                 grad_ys = tf.ones([5] * dim)
                 if _executing_eagerly():
@@ -984,10 +1219,10 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensor = self.tfe.Variable(
                         self.random_uniform([5] * dim, -100, 100, dtype=dtype))
                     with tf.GradientTape() as tape:
-                        averaged = hvd.allreduce(tensor, average=True)
+                        averaged = hvd.allreduce(tensor, op=hvd.Average)
                 else:
                     tensor = self.random_uniform([5] * dim, -100, 100, dtype=dtype)
-                    averaged = hvd.allreduce(tensor, average=True)
+                    averaged = hvd.allreduce(tensor, op=hvd.Average)
 
                 grad_ys = tf.ones([5] * dim, dtype=dtype)
                 if _executing_eagerly():
@@ -1014,7 +1249,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensors = [tf.cast(self.random_uniform(
                     [17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
-                summed = hvd.grouped_allreduce(tensors, average=False)
+                summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
             multiplied = [tensor * size for tensor in tensors]
             differences = [t1 - t2 for t1, t2 in zip(summed, multiplied)]
             differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
@@ -1033,6 +1268,377 @@ class TensorFlowTests(BaseTensorFlowTests):
 
             diff = self.evaluate(max_difference)
             self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_indexed_slices_cpu(self):
+        """Test on CPU that the grouped allreduce correctly sums tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+                results = hvd.grouped_allreduce(tensors, average=False)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            processed_results = []
+            for x in results:
+                keys = x.indices
+                processed_results.append(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])))
+
+            references = []
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(1, hvd.size()):
+                    slices[i] *= 2
+                references.append(tf.stack(slices))
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_mixed_indexed_slices_cpu(self):
+        """Test on CPU that the grouped allreduce correctly sums a mix of tensors and tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                # Create indexed slices
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+
+                # Append additional set of regular tensors
+                for x in slice_values:
+                    tensors.append(x)
+                results = hvd.grouped_allreduce(tensors, average=False)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices) or append standard tensor results
+            processed_results = []
+            for x in results:
+                if isinstance(x, tf.IndexedSlices):
+                    keys = x.indices
+                    processed_results.append(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])))
+                else:
+                    processed_results.append(x)
+
+            references = []
+            # First append references for indexed slices
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(1, hvd.size()):
+                    slices[i] *= 2
+                references.append(tf.stack(slices))
+
+            # Next, append references for standard tensors
+            for x in slice_values:
+                references.append(x * size)
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_average_cpu(self):
+        """Test on CPU that the grouped allreduce correctly averages 1D, 2D, 3D tensors."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [tf.cast(self.random_uniform(
+                    [17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Average)
+            differences = [t1 - t2 for t1, t2 in zip(result, tensors)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_min_cpu(self):
+        """Test on CPU that the grouped allreduce correctly finds minimum of 1D, 2D, 3D tensors."""
+        hvd.init()
+        size = hvd.size()
+        rank = hvd.rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                full_tensors = [tf.cast(self.random_uniform([size] + [17] * dim, -100, 100),
+                                        dtype=dtype) for _ in range(5)]
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [t[rank, ...]  for t in full_tensors]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Min)
+            reference = [tf.math.reduce_min(t, axis=0) for t in full_tensors]
+            differences = [t1 - t2 for t1, t2 in zip(result, reference)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            threshold = 0
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_max_cpu(self):
+        """Test on CPU that the grouped allreduce correctly finds maximum of 1D, 2D, 3D tensors."""
+        hvd.init()
+        size = hvd.size()
+        rank = hvd.rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                full_tensors = [tf.cast(self.random_uniform([size] + [17] * dim, -100, 100),
+                                        dtype=dtype) for _ in range(5)]
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [t[rank, ...]  for t in full_tensors]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Max)
+            reference = [tf.math.reduce_max(t, axis=0) for t in full_tensors]
+            differences = [t1 - t2 for t1, t2 in zip(result, reference)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            threshold = 0
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_product_cpu(self):
+        """Test on CPU that the grouped allreduce correctly finds product of 1D, 2D, 3D tensors."""
+        hvd.init()
+        size = hvd.size()
+        rank = hvd.rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                full_tensors = [tf.cast(self.random_uniform([size] + [17] * dim, -100, 100),
+                                        dtype=dtype) for _ in range(5)]
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [t[rank, ...]  for t in full_tensors]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Product)
+            reference = [tf.math.reduce_prod(t, axis=0) for t in full_tensors]
+            differences = [t1 - t2 for t1, t2 in zip(result, reference)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_indexed_slices_average_cpu(self):
+        """Test on CPU that the grouped allreduce correctly averages tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+                results = hvd.grouped_allreduce(tensors, op=hvd.Average)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            processed_results = []
+            for x in results:
+                keys = x.indices
+                processed_results.append(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])))
+
+            references = []
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(0, hvd.size()+1):
+                    if i == 0 or i == hvd.size():
+                        slices[i] /= hvd.size()
+                    else:
+                        slices[i] *= 2
+                        slices[i] /= hvd.size()
+                references.append(tf.stack(slices))
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_mixed_indexed_slices_average_cpu(self):
+        """Test on CPU that the grouped allreduce correctly averages a mix of tensors and tf.IndexedSlices."""
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                # Create indexed slices
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+
+                # Append additional set of regular tensors
+                for x in slice_values:
+                    tensors.append(x)
+                results = hvd.grouped_allreduce(tensors, op=hvd.Average)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices) or append standard tensor results
+            processed_results = []
+            for x in results:
+                if isinstance(x, tf.IndexedSlices):
+                    keys = x.indices
+                    processed_results.append(tf.cast(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])),
+                                                     dtype=dtype))
+                else:
+                    processed_results.append(x)
+
+            references = []
+            # First append references for indexed slices
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(0, hvd.size() + 1):
+                    if i == 0 or i == hvd.size():
+                        slices[i] /= hvd.size()
+                    else:
+                        slices[i] *= 2
+                        slices[i] /= hvd.size()
+                references.append(tf.cast(tf.stack(slices), dtype=dtype))
+
+            # Next, append references for standard tensors
+            for x in slice_values:
+                references.append(x)
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype in [tf.int8, tf.uint8] else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_indexed_slices_op_error(self):
+        """Tests that the grouped allreduce errors out on unsupported op for tf.IndexedSlices."""
+        hvd.init()
+        slice_values = [tf.ones(1,3) for _ in range(5)]
+        tensors = [tf.IndexedSlices(slice_values,
+                                    tf.convert_to_tensor([hvd.rank()])) for x in slice_values]
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Min))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Max))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Product))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Adasum))
+
+    def test_horovod_grouped_allreduce_mixed_indexed_slices_op_error(self):
+        """Tests that the grouped allreduce errors out on unsupported op for tf.IndexedSlices in list
+           with a mix of tensors and tf.IndexedSlice."""
+        hvd.init()
+        slice_values = [tf.ones(1,3) for _ in range(5)]
+        tensors = [tf.IndexedSlices(slice_values,
+                                    tf.convert_to_tensor([hvd.rank()])) for x in slice_values]
+
+        # Append additional set of regular tensors
+        for x in slice_values:
+            tensors.append(x)
+
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Min))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Max))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Product))
+        with self.assertRaises(NotImplementedError):
+            self.evaluate(hvd.grouped_allreduce(tensors, op=hvd.Adasum))
 
     def test_horovod_grouped_allreduce_gpu(self):
         """Test on GPU that the grouped allreduce correctly sums 1D, 2D, 3D tensors."""
@@ -1055,7 +1661,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 minval = -maxval if dtype not in [tf.uint8] else 0
                 tensors = [tf.cast(self.random_uniform(
                     [17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
-                summed = hvd.grouped_allreduce(tensors, average=False)
+                summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
             multiplied = [tensor * size for tensor in tensors]
             differences = [t1 - t2 for t1, t2 in zip(summed, multiplied)]
             differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
@@ -1075,6 +1681,405 @@ class TensorFlowTests(BaseTensorFlowTests):
             diff = self.evaluate(max_difference)
             self.assertTrue(diff <= threshold, "hvd.grouped_allreduce on GPU produces incorrect results")
 
+    def test_horovod_grouped_allreduce_indexed_slices_gpu(self):
+        """Test on GPU that the grouped allreduce correctly sums tf.IndexedSlices."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+                results = hvd.grouped_allreduce(tensors, average=False)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            processed_results = []
+            for x in results:
+                keys = x.indices
+                processed_results.append(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])))
+
+            references = []
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(1, hvd.size()):
+                    slices[i] *= 2
+                references.append(tf.stack(slices))
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_mixed_indexed_slices_gpu(self):
+        """Test on GPU that the grouped allreduce correctly sums a mix of tensors and tf.IndexedSlices."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                # Create indexed slices
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+
+                # Append additional set of regular tensors
+                for x in slice_values:
+                    tensors.append(x)
+                results = hvd.grouped_allreduce(tensors, average=False)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices) or append standard tensor results
+            processed_results = []
+            for x in results:
+                if isinstance(x, tf.IndexedSlices):
+                    keys = x.indices
+                    processed_results.append(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])))
+                else:
+                    processed_results.append(x)
+
+            references = []
+            # First append references for indexed slices
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(1, hvd.size()):
+                    slices[i] *= 2
+                references.append(tf.stack(slices))
+
+            # Next, append references for standard tensors
+            for x in slice_values:
+                references.append(x * size)
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_average_gpu(self):
+        """Test on GPU that the grouped allreduce correctly averages 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [tf.cast(self.random_uniform(
+                    [17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Average)
+            differences = [t1 - t2 for t1, t2 in zip(result, tensors)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_min_gpu(self):
+        """Test on GPU that the grouped allreduce correctly finds minimum of 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        rank = hvd.rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                full_tensors = [tf.cast(self.random_uniform([size] + [17] * dim, -100, 100),
+                                        dtype=dtype) for _ in range(5)]
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [t[rank, ...]  for t in full_tensors]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Min)
+            reference = [tf.math.reduce_min(t, axis=0) for t in full_tensors]
+            differences = [t1 - t2 for t1, t2 in zip(result, reference)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            threshold = 0
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_max_gpu(self):
+        """Test on GPU that the grouped allreduce correctly finds maximum of 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        rank = hvd.rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                full_tensors = [tf.cast(self.random_uniform([size] + [17] * dim, -100, 100),
+                                        dtype=dtype) for _ in range(5)]
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [t[rank, ...]  for t in full_tensors]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Max)
+            reference = [tf.math.reduce_max(t, axis=0) for t in full_tensors]
+            differences = [t1 - t2 for t1, t2 in zip(result, reference)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            threshold = 0
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_product_gpu(self):
+        """Test on GPU that the grouped allreduce correctly finds product of 1D, 2D, 3D tensors."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        rank = hvd.rank()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                full_tensors = [tf.cast(self.random_uniform([size] + [17] * dim, -100, 100),
+                                        dtype=dtype) for _ in range(5)]
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                tensors = [t[rank, ...]  for t in full_tensors]
+                result = hvd.grouped_allreduce(tensors, op=hvd.Product)
+            reference = [tf.math.reduce_prod(t, axis=0) for t in full_tensors]
+            differences = [t1 - t2 for t1, t2 in zip(result, reference)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_indexed_slices_average_gpu(self):
+        """Test on GPU that the grouped allreduce correctly averages tf.IndexedSlices."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+                results = hvd.grouped_allreduce(tensors, op=hvd.Average)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices)
+            processed_results = []
+            for x in results:
+                keys = x.indices
+                processed_results.append(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])))
+
+            references = []
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(0, hvd.size()+1):
+                    if i == 0 or i == hvd.size():
+                        slices[i] /= hvd.size()
+                    else:
+                        slices[i] *= 2
+                        slices[i] /= hvd.size()
+                references.append(tf.stack(slices))
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype == tf.uint8 else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
+    def test_horovod_grouped_allreduce_mixed_indexed_slices_average_gpu(self):
+        """Test on GPU that the grouped allreduce correctly averages a mix of tensors and tf.IndexedSlices."""
+        # Only do this test if there are GPUs available.
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest(("No GPUs available"))
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
+        dims = [1, 2, 3]
+
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % hvd.local_rank()):
+                maxval = 100 if dtype not in [tf.uint8, tf.int8] else 1
+                minval = -maxval if dtype not in [tf.uint8] else 0
+                # Create indexed slices
+                slice_values = [tf.cast(self.random_uniform([17] * dim, minval, maxval), dtype=dtype) for _ in range(5)]
+                tensors = [tf.IndexedSlices(tf.stack([x]*2),
+                                            tf.convert_to_tensor([hvd.rank(), hvd.rank()+1])) for x in slice_values]
+
+                # Append additional set of regular tensors
+                for x in slice_values:
+                    tensors.append(x)
+                results = hvd.grouped_allreduce(tensors, op=hvd.Average)
+
+            # Convert indexed slice to tensor (summing entries for duplicate indices) or append standard tensor results
+            processed_results = []
+            for x in results:
+                if isinstance(x, tf.IndexedSlices):
+                    keys = x.indices
+                    processed_results.append(tf.cast(tf.math.unsorted_segment_sum(x.values, keys, tf.size(tf.unique(keys)[0])),
+                                                     dtype=dtype))
+                else:
+                    processed_results.append(x)
+
+            references = []
+            # First append references for indexed slices
+            for x in slice_values:
+                slices = [x] * (hvd.size() + 1)
+                for i in range(0, hvd.size() + 1):
+                    if i == 0 or i == hvd.size():
+                        slices[i] /= hvd.size()
+                    else:
+                        slices[i] *= 2
+                        slices[i] /= hvd.size()
+                references.append(tf.cast(tf.stack(slices), dtype=dtype))
+
+            # Next, append references for standard tensors
+            for x in slice_values:
+                references.append(x)
+
+            differences = [t1 - t2 for t1, t2 in zip(processed_results, references)]
+            differences = [tf.cast(diff, tf.int32) if dtype in [tf.int8, tf.uint8] else diff for diff in differences]
+            max_difference = tf.reduce_max([tf.reduce_max(tf.abs(diff)) for diff in differences])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in [tf.uint8, tf.int8, tf.int32, tf.int64]:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                self.skipTest("Horovod cluster too large for precise multiplication comparison")
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_allreduce produces incorrect results")
+
     def test_horovod_grouped_allreduce_grad_cpu(self):
         """Test the correctness of the grouped allreduce gradient on CPU."""
         hvd.init()
@@ -1090,11 +2095,11 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensors = [self.tfe.Variable(self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype)) for _ in range(5)]
                     with tf.GradientTape(persistent=True) as tape:
-                        summed = hvd.grouped_allreduce(tensors, average=False)
+                        summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
                 else:
                     tensors = [self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype) for _ in range(5)]
-                    summed = hvd.grouped_allreduce(tensors, average=False)
+                    summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
 
                 grads_ys = [tf.ones([5] * dim, dtype=dtype) for _ in range(5)]
                 if _executing_eagerly():
@@ -1134,11 +2139,11 @@ class TensorFlowTests(BaseTensorFlowTests):
                     tensors = [self.tfe.Variable(self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype)) for _ in range(5)]
                     with tf.GradientTape(persistent=True) as tape:
-                        summed = hvd.grouped_allreduce(tensors, average=False)
+                        summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
                 else:
                     tensors = [self.random_uniform(
                         [5] * dim, -100, 100, dtype=dtype) for _ in range(5)]
-                    summed = hvd.grouped_allreduce(tensors, average=False)
+                    summed = hvd.grouped_allreduce(tensors, op=hvd.Sum)
 
                 grads_ys = [tf.ones([5] * dim, dtype=dtype) for _ in range(5)]
                 if _executing_eagerly():
@@ -1820,7 +2825,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                         if use_resource:
                             var = resource_variable_ops.ResourceVariable(initial_value)
                         else:
-                            var = tf_ops_variables.RefVariable(initial_value)
+                            var = RefVariable(initial_value)
                         init = tf.compat.v1.global_variables_initializer()
                         self.evaluate(init)
                     else:
@@ -1880,7 +2885,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                         if use_resource:
                             var = resource_variable_ops.ResourceVariable(initial_value)
                         else:
-                            var = tf_ops_variables.RefVariable(initial_value)
+                            var = RefVariable(initial_value)
                         init = tf.compat.v1.global_variables_initializer()
                         self.evaluate(init)
                     else:
@@ -1925,7 +2930,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                             if use_resource:
                                 var = resource_variable_ops.ResourceVariable(initial_value, name=f"dim_{dim}_var")
                             else:
-                                var = tf_ops_variables.RefVariable(initial_value, name=f"dim_{dim}_var")
+                                var = RefVariable(initial_value, name=f"dim_{dim}_var")
                             init = tf.compat.v1.global_variables_initializer()
                             self.evaluate(init)
                         else:
@@ -3054,7 +4059,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 if local_rank == first_join_rank:
                     ret = self.evaluate(hvd.join())
                 else:
-                    summed = hvd.allreduce(tensor, average=False)
+                    summed = hvd.allreduce(tensor, op=hvd.Sum)
                     multiplied = tensor * (size-1)
                     max_difference = tf.reduce_max(tf.abs(summed - multiplied))
 
@@ -3325,6 +4330,94 @@ class TensorFlowTests(BaseTensorFlowTests):
             self.assertTrue(diff <= threshold,
                             "hvd.reducescatter produces incorrect results")
 
+    def test_horovod_reducescatter_cpu_prescale(self):
+        """Test on CPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
+        if hvd.ccl_built():
+            self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
+        if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
+            self.skipTest("ReducescatterGloo is not supported on macOS")
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                factor = np.random.uniform()
+                tensor = self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype)
+                reduced = hvd.reducescatter(tensor, op=hvd.Sum, prescale_factor=factor)
+
+                # Scaling done in FP64 math for integer types, FP32 math for FP16 on CPU
+                tensor = tf.cast(tensor, tf.float32 if dtype == tf.float16 else
+                                 tf.float64 if dtype in int_types else dtype)
+                factor = tf.convert_to_tensor(factor, tf.float32 if dtype == tf.float16 else
+                                              tf.float64 if dtype in int_types else dtype)
+
+                expected = tf.cast(factor * tensor[rank * 4:(rank + 1) * 4], reduced.dtype) * size
+                max_difference = tf.reduce_max(tf.abs(reduced - expected))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold,
+                            "hvd.reducescatter produces incorrect results")
+
+    def test_horovod_reducescatter_cpu_postscale(self):
+        """Test on CPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
+        if hvd.ccl_built():
+            self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
+        if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
+            self.skipTest("ReducescatterGloo is not supported on macOS")
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                factor = np.random.uniform()
+                tensor = self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype)
+                reduced = hvd.reducescatter(tensor, op=hvd.Sum, postscale_factor=factor)
+
+                multiplied = tensor * size
+                # Scaling done in FP64 math for integer types, FP32 math for FP16 on CPU
+                multiplied = tf.cast(multiplied, tf.float32 if dtype == tf.float16 else
+                                     tf.float64 if dtype in int_types else dtype)
+                factor = tf.convert_to_tensor(factor, tf.float32 if dtype == tf.float16 else
+                                              tf.float64 if dtype in int_types else dtype)
+
+                expected = tf.cast(factor * multiplied[rank * 4:(rank + 1) * 4], reduced.dtype)
+                max_difference = tf.reduce_max(tf.abs(reduced - expected))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold,
+                            "hvd.reducescatter produces incorrect results")
+
+
     def test_horovod_reducescatter_cpu_fused(self):
         """Test on CPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors
         with Tensor Fusion."""
@@ -3439,7 +4532,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                     seed=1234 + index,
                     dtype=dtype)
                 summed = hvd.reducescatter(tensor, op=hvd.Sum)
-            
+
             if rank < size // 2:
                 low = rank * (4 + 1)
                 high = low + (4 + 1)
@@ -3465,11 +4558,8 @@ class TensorFlowTests(BaseTensorFlowTests):
 
             test = max_difference <= threshold
             tests.append(test)
-            # infos.append({"0_t": tensor, "1_e": expected, "2_s": summed, "3_ok": tf.reduce_all(test)})
         i = self.evaluate([tf.reduce_all(tests)] + infos)
         successful = i.pop(0)
-        # from pprint import pprint
-        # pprint(i)
         self.assertTrue(successful,
                         "hvd.reducescatter produces incorrect results")
 
@@ -3528,6 +4618,97 @@ class TensorFlowTests(BaseTensorFlowTests):
             diff = self.evaluate(max_difference)
             self.assertTrue(diff <= threshold,
                             "hvd.reducescatter on GPU produces incorrect results")
+
+    def test_horovod_reducescatter_gpu_prescale(self):
+        """Test that the reducescatter works on GPUs with prescaling."""
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(123456)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % local_rank):
+                factor = np.random.uniform()
+                tensor = self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype)
+                reduced = hvd.reducescatter(tensor, op=hvd.Sum, prescale_factor=factor)
+
+                # Scaling done in FP64 math for integer types
+                tensor = tf.cast(tensor, tf.float64 if dtype in int_types else dtype)
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+                expected = tf.cast(factor * tensor[rank * 4:(rank + 1) * 4], reduced.dtype) * size
+                max_difference = tf.reduce_max(tf.abs(reduced - expected))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold,
+                            "hvd.reducescatter on GPU produces incorrect results")
+
+    def test_horovod_reducescatter_gpu_postscale(self):
+        """Test on GPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest("No GPUs available")
+
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+        hvd.init()
+        rank = hvd.rank()
+        local_rank = hvd.local_rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%s" % local_rank):
+                factor = np.random.uniform()
+                tensor = self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype)
+                reduced = hvd.reducescatter(tensor, op=hvd.Sum, postscale_factor=factor)
+
+                multiplied = tensor * size
+                # Scaling done in FP64 math for integer types.
+                multiplied = tf.cast(multiplied, tf.float64 if dtype in int_types else dtype)
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+
+                expected = tf.cast(factor * multiplied[rank * 4:(rank + 1) * 4], reduced.dtype)
+                max_difference = tf.reduce_max(tf.abs(reduced - expected))
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold,
+                            "hvd.reducescatter produces incorrect results")
+
 
     def test_horovod_reducescatter_gpu_fused(self):
         """Test that the reducescatter works on GPUs with Tensor Fusion.
@@ -3689,7 +4870,6 @@ class TensorFlowTests(BaseTensorFlowTests):
             # infos.append({"0_t": tensor, "1_e": expected, "2_s": summed, "3_ok": tf.reduce_all(test)})
         i = self.evaluate([tf.reduce_all(tests)] + infos)
         succesful = i.pop(0)
-        # pprint(i)
         self.assertTrue(succesful,
                         "hvd.reducescatter produces incorrect results")
 
@@ -3863,6 +5043,94 @@ class TensorFlowTests(BaseTensorFlowTests):
             diff = self.evaluate(max_difference)
             self.assertTrue(diff <= threshold, "hvd.grouped_reducescatter produces incorrect results")
 
+    def test_horovod_grouped_reducescatter_cpu_prescale(self):
+        """Test on CPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
+        if hvd.ccl_built():
+            self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
+        if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
+            self.skipTest("ReducescatterGloo is not supported on macOS")
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                factor = np.random.uniform()
+                tensors = [self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype) for _ in range(5)]
+                reduced = hvd.grouped_reducescatter(tensors, op=hvd.Sum, prescale_factor=factor)
+
+                # Scaling done in FP64 math for integer types, FP32 math for FP16 on CPU
+                tensors = [tf.cast(t, tf.float32 if dtype == tf.float16 else
+                           tf.float64 if dtype in int_types else dtype) for t in tensors]
+                factor = tf.convert_to_tensor(factor, tf.float32 if dtype == tf.float16 else
+                                              tf.float64 if dtype in int_types else dtype)
+
+                expected = [tf.cast(factor * t[rank * 4:(rank + 1) * 4], reduced[0].dtype) * size
+                            for t in tensors]
+                max_difference = tf.reduce_max([tf.reduce_max(tf.abs(t1 - t2)) for t1, t2 in zip(reduced, expected)])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_reducescatter produces incorrect results")
+
+    def test_horovod_grouped_reducescatter_cpu_postscale(self):
+        """Test on CPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
+        if hvd.ccl_built():
+            self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
+        if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
+            self.skipTest("ReducescatterGloo is not supported on macOS")
+        hvd.init()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/cpu:0"):
+                factor = np.random.uniform()
+                tensors = [self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype) for _ in range(5)]
+                reduced = hvd.grouped_reducescatter(tensors, op=hvd.Sum, postscale_factor=factor)
+
+                multiplied = [t * size for t in tensors]
+                # Scaling done in FP64 math for integer types, FP32 math for FP16 on CPU
+                multiplied = [tf.cast(t, tf.float32 if dtype == tf.float16 else
+                              tf.float64 if dtype in int_types else dtype) for t in multiplied]
+                factor = tf.convert_to_tensor(factor, tf.float32 if dtype == tf.float16 else
+                                              tf.float64 if dtype in int_types else dtype)
+
+                expected = [tf.cast(factor * m[rank * 4:(rank + 1) * 4], reduced[0].dtype)
+                            for m in multiplied]
+                max_difference = tf.reduce_max([tf.reduce_max(tf.abs(t1 - t2)) for t1, t2 in zip(reduced, expected)])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_reducescatter produces incorrect results")
+
+
     def test_horovod_grouped_reducescatter_scalar_error(self):
         if hvd.ccl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
@@ -3960,6 +5228,94 @@ class TensorFlowTests(BaseTensorFlowTests):
             diff = self.evaluate(max_difference)
             self.assertTrue(diff <= threshold,
                             "hvd.grouped_reducescatter on GPU produces incorrect results")
+
+    def test_horovod_grouped_reducescatter_gpu_prescale(self):
+        """Test on GPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest("No GPUs available")
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % local_rank):
+                factor = np.random.uniform()
+                tensors = [self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype) for _ in range(5)]
+                reduced = hvd.grouped_reducescatter(tensors, op=hvd.Sum, prescale_factor=factor)
+
+                # Scaling done in FP64 math for integer types
+                tensors = [tf.cast(t, tf.float64 if dtype in int_types else dtype) for t in tensors]
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+
+                expected = [tf.cast(factor * t[rank * 4:(rank + 1) * 4], reduced[0].dtype) * size
+                            for t in tensors]
+                max_difference = tf.reduce_max([tf.reduce_max(tf.abs(t1 - t2)) for t1, t2 in zip(reduced, expected)])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_reducescatter produces incorrect results")
+
+    def test_horovod_grouped_reducescatter_gpu_postscale(self):
+        """Test on GPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling"""
+        if not tf.test.is_gpu_available(cuda_only=True):
+            self.skipTest("No GPUs available")
+        if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
+            self.skipTest("Not compiled with HOROVOD_GPU_OPERATIONS")
+        hvd.init()
+        local_rank = hvd.local_rank()
+        rank = hvd.rank()
+        size = hvd.size()
+        dtypes = self.filter_supported_types([tf.int32, tf.int64, tf.float16, tf.float32])
+        int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
+        dims = [1, 2, 3]
+        np.random.seed(12345)
+        for dtype, dim in itertools.product(dtypes, dims):
+            with tf.device("/gpu:%d" % local_rank):
+                factor = np.random.uniform()
+                tensors = [self.random_uniform([size * 4] * dim, -100, 100, dtype=dtype) for _ in range(5)]
+                reduced = hvd.grouped_reducescatter(tensors, op=hvd.Sum, postscale_factor=factor)
+
+                multiplied = [t * size for t in tensors]
+                # Scaling done in FP64 math for integer types
+                multiplied = [tf.cast(t, tf.float64 if dtype in int_types else dtype) for t in multiplied]
+                factor = tf.convert_to_tensor(factor, tf.float64 if dtype in int_types else dtype)
+
+                expected = [tf.cast(factor * m[rank * 4:(rank + 1) * 4], reduced[0].dtype)
+                            for m in multiplied]
+                max_difference = tf.reduce_max([tf.reduce_max(tf.abs(t1 - t2)) for t1, t2 in zip(reduced, expected)])
+
+            # Threshold for floating point equality depends on number of
+            # ranks, since we're comparing against precise multiplication.
+            if size <= 3 or dtype in int_types:
+                threshold = 0
+            elif size < 10:
+                threshold = 1e-4
+            elif size < 15:
+                threshold = 5e-4
+            else:
+                break
+
+            diff = self.evaluate(max_difference)
+            self.assertTrue(diff <= threshold, "hvd.grouped_reducescatter produces incorrect results")
+
 
     def test_horovod_grouped_allgather_cpu(self):
         """Test that the grouped allgather correctly gathers 1D, 2D, 3D tensors."""
@@ -4145,9 +5501,11 @@ class TensorFlowTests(BaseTensorFlowTests):
                 with tf.device("/gpu:%d" % local_rank):
                     tape = hvd.PartialDistributedGradientTape(tape, local_layers=local_layers)
                     allreduced_gradients = tape.gradient(l, model.trainable_weights)
+                    local_vars_grads, global_vars_grads = tape.get_local_and_global_gradients(l, model.trainable_weights)
             else:
                 tape = hvd.PartialDistributedGradientTape(tape, local_layers=local_layers)
                 allreduced_gradients = tape.gradient(l, model.trainable_weights)
+                local_vars_grads, global_vars_grads = tape.get_local_and_global_gradients(l, model.trainable_weights)
 
             for var,grad in zip(model.trainable_weights, allreduced_gradients):
                 if _IS_TF2:
@@ -4169,7 +5527,95 @@ class TensorFlowTests(BaseTensorFlowTests):
                         # non-local gradients shouldn't be equal given that the initial weights are set to ranks
                         self.assertNotAllClose(grad, var_grad[var])
 
+            for var, grad in local_vars_grads:
+                if _IS_TF2:
+                    # scale the gradients of local variable by size
+                    avg_local_grad = var_grad[var.ref()]/hvd.size()
+                    # local gradient from both decoupled_gradient() and gradient() calls.
+                    self.assertAllClose(grad, avg_local_grad)
+                else:
+                    avg_local_grad = var_grad[var]/hvd.size()
+                    # local gradient from both decoupled_gradient() and gradient() calls.
+                    self.assertAllClose(grad, avg_local_grad)
 
+            for var, grad in global_vars_grads:
+                if _IS_TF2:
+                    # non-local gradients from both decoupled_gradient() and gradient() calls.
+                    self.assertNotAllClose(grad, var_grad[var.ref()])
+                else:
+                    self.assertNotAllClose(grad, var_grad[var])
+
+    def test_model_parallel_model(self):
+        class DummyMPModel2Devices(tf.keras.Model):
+            def __init__(self):
+                # For demonstation purpose, only supports 2 way parallel
+                super().__init__()
+                if hvd.rank() == 0:
+                    self.embedding = tf.keras.layers.Embedding(7, 3, embeddings_initializer=tf.keras.initializers.Constant(1.))
+                else:
+                    self.embedding = tf.keras.layers.Embedding(9, 3, embeddings_initializer=tf.keras.initializers.Constant(2.))
+                self.concat = tf.keras.layers.Concatenate()
+                self.dense = tf.keras.layers.Dense(
+                    1, use_bias=False, kernel_initializer=tf.keras.initializers.Constant(1.))
+
+
+            def call(self, inputs):
+                x = self.embedding(inputs)
+                y = hvd.alltoall(x)
+                out = self.dense(tf.reshape(y, [1, 6]))
+                return out
+
+        tf.config.set_soft_device_placement(True)
+
+        hvd.init()
+        if hvd.size() != 2:
+            self.skipTest("Test requires 2 workers.")
+
+        rank = hvd.rank()
+        local_rank = hvd.local_rank()
+
+        if tf.test.is_gpu_available(cuda_only=True):
+            with tf.device("/gpu:%d" % local_rank):
+                mp_model = DummyMPModel2Devices()
+                optimizer = tf.keras.optimizers.SGD(learning_rate=1.)
+                bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+                labels = tf.constant(1., shape=[1, 1])
+
+                if rank == 0:
+                    dp_inputs = tf.constant([rank + 1, rank], dtype=tf.int64)
+                else:
+                    dp_inputs = tf.constant([rank + 2, rank + 3], dtype=tf.int64)
+        else:
+            mp_model = DummyMPModel2Devices()
+            optimizer = tf.keras.optimizers.SGD(learning_rate=1.)
+            bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+            labels = tf.constant(1., shape=[1, 1])
+
+            if rank == 0:
+                dp_inputs = tf.constant([rank + 1, rank], dtype=tf.int64)
+            else:
+                dp_inputs = tf.constant([rank + 2, rank + 3], dtype=tf.int64)
+
+        @tf.function
+        def mp_train_step(inputs):
+            with tf.GradientTape() as tape:
+                predictions = mp_model(inputs)
+                loss = tf.math.reduce_mean(bce(labels, predictions))
+            tape = hvd.DistributedGradientTape(tape)
+            tape.register_local_source(mp_model.embedding.weights[0])
+            gradients = tape.gradient(loss, mp_model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, mp_model.trainable_variables))
+            return loss
+
+        if tf.test.is_gpu_available(cuda_only=True):
+            with tf.device("/gpu:%d" % local_rank):
+                # "Transpose" input from data parallel to model parallel
+                mp_inputs = hvd.alltoall(dp_inputs)
+                mp_loss = mp_train_step(mp_inputs)
+        else:
+            # "Transpose" input from data parallel to model parallel
+            mp_inputs = hvd.alltoall(dp_inputs)
+            mp_loss = mp_train_step(mp_inputs)
 
 
 from tensorflow.python.framework.test_util import run_all_in_graph_and_eager_modes

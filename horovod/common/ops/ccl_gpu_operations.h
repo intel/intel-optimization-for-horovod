@@ -166,28 +166,9 @@ public:
                  const Response& response) override;
 
 protected:
-  void MemcpyInFusionBuffer(const std::vector<TensorTableEntry>& entries,
-                            const int* displcmnts, int element_size,
-                            void*& buffer_data) override;
-
-  void MemcpyOutFusionBuffer(const int64_t* const* entry_component_offsets,
-                             const int64_t* const* entry_component_sizes,
-                             const void* buffer_data, int element_size,
-                             std::vector<TensorTableEntry>& entries) override;
-
-  void MemcpyEntryInFusionBuffer(const std::vector<TensorTableEntry>& entries,
-                                 const TensorTableEntry& e,
-                                 void* buffer_data_at_offset) override;
-
-  void MemcpyEntryOutFusionBuffer(const std::vector<TensorTableEntry>& entries,
-                                  const void* buffer_data_at_offset,
-                                  TensorTableEntry& e, int64_t entry_offset,
-                                  size_t entry_size) override;
-
   Status AllocateOutput(std::vector<TensorTableEntry>& entries,
                         const Response& response,
-                        int64_t**& entry_component_sizes,
-                        int*& recvcounts) override;
+                        int64_t**& entry_component_sizes) override;
 
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
 
@@ -322,25 +303,7 @@ public:
                const Response& response) const override;
 
 protected:
-  Status AllocateOutput(std::vector<TensorTableEntry>& entries,
-                        const std::vector<TensorShape>& output_shapes) override;
-
   void WaitForData(std::vector<TensorTableEntry>& entries) override;
-
-  void MemcpyInFusionBuffer(
-      const std::vector<TensorTableEntry>& entries,
-      const std::vector<std::vector<TensorShape>>& output_shapes,
-      std::size_t element_size, void*& buffer_data) override;
-
-  void MemcpyOutFusionBuffer(const void* buffer_data,
-                             std::vector<TensorTableEntry>& entries) override;
-
-  void MemcpyEntryInFusionBuffer(const TensorTableEntry& e, size_t entry_offset,
-                                 size_t entry_size,
-                                 void* buffer_data_at_offset) override;
-
-  void MemcpyEntryOutFusionBuffer(const void* buffer_data_at_offset,
-                                  TensorTableEntry& e) override;
 
   CCLGPUContext* ccl_context_;
   CCLGPUOpContext ccl_op_context_;

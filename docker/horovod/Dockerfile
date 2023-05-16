@@ -71,12 +71,9 @@ RUN cat /etc/ssh/ssh_config | grep -v StrictHostKeyChecking > /etc/ssh/ssh_confi
 
 RUN ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python
 
-# pinning pip to 21.0.0 as 22.0.0 cannot fetch pytorch packages from html linl
-# https://github.com/pytorch/pytorch/issues/72045
 RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
     python get-pip.py && \
-    rm get-pip.py && \
-    pip install --no-cache-dir -U --force pip~=21.0.0
+    rm get-pip.py
 
 # Install PyTorch, TensorFlow, Keras and MXNet
 RUN pip install --no-cache-dir \
@@ -91,7 +88,7 @@ RUN pip install --no-cache-dir \
     keras \
     h5py
 
-RUN pip install --no-cache-dir mxnet-cu112==${MXNET_VERSION}
+RUN pip install --no-cache-dir mxnet-cu112==${MXNET_VERSION} "numpy<1.24.0"
 
 # Install Spark stand-alone cluster.
 RUN wget --progress=dot:giga "https://www.apache.org/dyn/closer.lua/spark/${SPARK_PACKAGE}?action=download" -O - | tar -xzC /tmp; \

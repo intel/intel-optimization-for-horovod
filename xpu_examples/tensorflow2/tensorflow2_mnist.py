@@ -93,12 +93,7 @@ def main():
     # Horovod: save checkpoints only on worker 0 to prevent other workers from
     # corrupting it.
     if hvd.rank() == 0:
-        pass
-        # This is a error in TF 2.12.0rc0.
-        # https://github.com/tensorflow/tensorflow/issues/59869
-        # It was fix in https://github.com/tensorflow/tensorflow/commit/b016eb2a4a9d9d95cfa9809ca4af937c8caeee38
-        # we can add this back once we update TF.
-        # checkpoint.save(checkpoint_dir)
+        checkpoint.save(checkpoint_dir)
 
 
 if __name__ == '__main__':
