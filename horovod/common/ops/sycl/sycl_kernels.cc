@@ -15,16 +15,6 @@
 
 #include "sycl_kernels.h"
 
-// TODO(Fengqing):bfloat16 is only supported by dpcpp,
-// not a SYCL official solution.
-#if __has_include(<sycl/ext/oneapi/bfloat16.hpp>)
-using bfloat16 = sycl::ext::oneapi::bfloat16;
-#elif __has_include(<sycl/ext/oneapi/experimental/bfloat16.hpp>)
-using bfloat16 = sycl::ext::oneapi::experimental::bfloat16;
-#else
-#error "compiler unsupports bfloat16"
-#endif
-
 namespace horovod {
 namespace common {
 
@@ -225,10 +215,13 @@ void BatchedScaledD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
     BatchedScaledD2DMemcpy<sycl::half, float>(params, num_copies,
                                               float_scale_factor, stream);
     break;
+#if HAVE_DPCPP
   case HOROVOD_BFLOAT16:
+    using bfloat16 = sycl::ext::oneapi::bfloat16;
     BatchedScaledD2DMemcpy<bfloat16, float>(params, num_copies,
                                             float_scale_factor, stream);
     break;
+#endif // HAVE_DPCPP
   case HOROVOD_FLOAT32:
     BatchedScaledD2DMemcpy<float, float>(params, num_copies, float_scale_factor,
                                          stream);
