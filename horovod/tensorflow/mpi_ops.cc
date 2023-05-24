@@ -482,8 +482,8 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
 #if HAVE_SYCL
     // device_context == nullptr means CPU device, not need to check here
     auto stream = this->SYCLQueue();
-    void *ptr = const_cast<void*>((*tensor)->data());
-    auto size = (*tensor)->size();
+    void *ptr = (void*)zero_tensor->tensor_data().data();
+    auto size = zero_tensor->tensor_data().size();
     ev = stream.memset(ptr, 0, size);
 #else
     auto stream = (device_context != nullptr) ? stream_executor::gpu::AsGpuStreamValue(device_context->stream()) : 0;

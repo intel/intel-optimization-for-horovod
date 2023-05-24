@@ -83,7 +83,9 @@ void CCLGPUOpContext::InitCCLComm(const gpuStream_t& stream,
   auto process_set_id = entries[0].process_set_id;
   auto& process_set = global_state_->process_set_table.Get(process_set_id);
 
-  if (ccl_context_->ccl_comms[global_state_->current_nccl_stream].empty()) {
+  if (ccl_context_->ccl_comms[global_state_->current_nccl_stream].empty() ||
+      !ccl_context_->ccl_comms[global_state_->current_nccl_stream].count(
+          std::make_tuple(process_set_id, ccl_device_map))) {
     auto& timeline = global_state_->timeline;
     timeline.ActivityStartAll(entries, INIT_CCL);
 
@@ -94,14 +96,14 @@ void CCLGPUOpContext::InitCCLComm(const gpuStream_t& stream,
     if (ccl_rank == 0) {
       if (!kvs_) {
         kvs_ = ccl::create_main_kvs();
-        auto main_addr = kvs_->get_address();
-        process_set.controller->Bcast((void*)main_addr.data(), main_addr.size(),
-                                      0, ccl_id_bcast_comm);
       }
+      auto main_addr = kvs_->get_address();
+      process_set.controller->Bcast((void*)main_addr.data(), main_addr.size(),
+                                    0, ccl_id_bcast_comm);
     } else {
       ccl::kvs::address_type main_addr;
       process_set.controller->Bcast((void*)main_addr.data(), main_addr.size(),
-                                    0, Communicator::GLOBAL);
+                                    0, ccl_id_bcast_comm);
       kvs_ = ccl::create_kvs(main_addr);
     }
 
