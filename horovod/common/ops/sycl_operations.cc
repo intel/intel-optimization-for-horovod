@@ -211,14 +211,14 @@ public:
     case HOROVOD_FLOAT16:
       ScaleBufferSyclImpl((const sycl::half*)fused_input_data,
                           (sycl::half*)buffer_data, num_elements,
-                          float_scale_factor, stream);
+                          (sycl::half)float_scale_factor, stream);
       break;
 #if HAVE_DPCPP
     case HOROVOD_BFLOAT16:
       using bfloat16 = sycl::ext::oneapi::bfloat16;
       ScaleBufferSyclImpl((const bfloat16*)fused_input_data,
                           (bfloat16*)buffer_data, num_elements,
-                          float_scale_factor, stream);
+                          (bfloat16)float_scale_factor, stream);
       break;
 #endif // HAVE_DPCPP
     case HOROVOD_FLOAT32:

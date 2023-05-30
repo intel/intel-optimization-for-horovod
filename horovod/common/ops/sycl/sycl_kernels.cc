@@ -212,14 +212,14 @@ void BatchedScaledD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
                                            float_scale_factor, stream);
     break;
   case HOROVOD_FLOAT16:
-    BatchedScaledD2DMemcpy<sycl::half, float>(params, num_copies,
-                                              float_scale_factor, stream);
+    BatchedScaledD2DMemcpy<sycl::half, sycl::half>(
+        params, num_copies, (sycl::half)float_scale_factor, stream);
     break;
 #if HAVE_DPCPP
   case HOROVOD_BFLOAT16:
     using bfloat16 = sycl::ext::oneapi::bfloat16;
-    BatchedScaledD2DMemcpy<bfloat16, float>(params, num_copies,
-                                            float_scale_factor, stream);
+    BatchedScaledD2DMemcpy<bfloat16, bfloat16>(
+        params, num_copies, (bfloat16)float_scale_factor, stream);
     break;
 #endif // HAVE_DPCPP
   case HOROVOD_FLOAT32:
