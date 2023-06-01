@@ -1263,19 +1263,6 @@ private:
               any_failures_and_tensors_done) {
     const bool do_lock = true;
     const bool sparse = false;
-#if HAVE_GPU && HAVE_SYCL
-    // MaybeLockVariableInputMutexesInOrder<Device, T> has been fix now. However it
-    // uses Eigen::GPUDevice to copy tensor, and public Eigen not support XPU device now.
-    // We rewrite a version without template argument 'Device' directly using sycl::queue 
-    // to copy tensor to bypass Eigen . GetInputTensorFromVariable<Device, T>
-    // is also rewrited because of Eigen.
-    VariableInputLockHolder variable_lock = MaybeLockVariableInputMutexesInOrder<T>(
-                          context, do_lock, sparse, std::vector<int>{tensor_index});
-    variable_locks.push_back(std::move(variable_lock));
-    Tensor tensor;
-    TF_RETURN_IF_ERROR(GetInputTensorFromVariable<T>(
-        context, tensor_index, do_lock, sparse, &tensor));
-#else
     // Here we need to replicate the functionality provided by
     // MaybeLockVariableInputMutexesInOrder(). With TF < 2.8.0 the function does
     // not work as intended for input_ids not starting at 0. See:
@@ -1306,7 +1293,6 @@ private:
     Tensor tensor;
     TF_RETURN_IF_ERROR(GetInputTensorFromVariable<Device, T>(
         context, tensor_index, do_lock, sparse, &tensor));
-#endif // HAVE_GPU && HAVE_SYCL
     Tensor* output = &tensor;
     MaybeForwardRefInputToRefOutput(context, tensor_index, tensor_index);
 
@@ -1379,7 +1365,7 @@ REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplace").Device(DEVICE_GPU),
                         HorovodBroadcastInplaceOp<GPUDevice>);
 #if HAVE_SYCL
 REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplace").Device(DEVICE_XPU),
-                        HorovodBroadcastInplaceOp<GPUDevice>);
+                        HorovodBroadcastInplaceOp<XPUDevice>);
 #endif // HAVE_SYCL
 #endif // HOROVOD_GPU_BROADCAST
 
@@ -1425,7 +1411,7 @@ REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplaceResource")
 REGISTER_KERNEL_BUILDER(Name("HorovodBroadcastInplaceResource")
                             .Device(DEVICE_XPU)
                             .HostMemory("resources"),
-                        HorovodBroadcastInplaceOp<GPUDevice>);
+                        HorovodBroadcastInplaceOp<XPUDevice>);
 #endif // HAVE_SYCL
 #endif // HOROVOD_GPU_BROADCAST
 

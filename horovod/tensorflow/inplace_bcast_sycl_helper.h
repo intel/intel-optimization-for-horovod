@@ -16,225 +16,51 @@
 #ifndef INPLACE_BROADCAST_SYCL_HELPER
 #define INPLACE_BROADCAST_SYCL_HELPER
 
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/tensor.h"
-#include "tensorflow/core/framework/variant_op_registry.h"
-#include "tensorflow/core/kernels/variable_ops.h"
-#include "tensorflow/core/lib/core/refcount.h"
+#include "tensorflow/c/kernels.h"
+#include "tensorflow/c/tf_status.h"
+#include "tensorflow/c/experimental/stream_executor/stream_executor.h"
 
 namespace tensorflow {
-namespace {
-sycl::queue GetSYCLQueue(OpKernelContext* ctx) {
-  TF_Status* s = TF_NewStatus();
-  auto sp_stream = TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(ctx), s);
-  if (TF_GetCode(s) == TF_OK) {
-    TF_DeleteStatus(s);
-    return *(reinterpret_cast<SP_Stream_st*>(sp_stream)->stream_handle);
-  } else {
-    std::string err_msg = TF_Message(s);
-    TF_DeleteStatus(s);
-    throw std::runtime_error("Failed to get stream, error message: " + err_msg);
-  }
-}
 
-// Below functions are generally edited from
-// tensorflow/core/kernels/training_op_helpers.h. These functions use
-// `functor::DenseUpdate<Device, T, ASSIGN>` implemented by
-// `Eigen::GPUDevice::memcpy()` to copy tensor.  However, public Eigen don't
-// support XPU device. We rewrite a version
-// directly using sycl::queue::memcpy(), and replaced the
-// `functor::DenseUpdate<Device, T, ASSIGN>` with it to avoid using Eigen.
-
-// Must be called before performing a sparse operation on a variable. Ensures
-// that no concurrent dense operations can happen while holding the variable's
-// lock.
-template <typename T>
-Status EnsureSparseVariableAccess(OpKernelContext* ctx, Var* var) {
-  if (var->copy_on_read_mode.load()) {
-    return OkStatus();
-  }
-  mutex_lock ml(*var->mu());
-  // Once copy-on-read mode is True the refcount is guaranteed to be 1. This can
-  // also happen if there are no concurrent reads of the variable and
-  // copy-on-read mode is false.
-  if (var->tensor()->RefCountIsOne()) {
-    var->copy_on_read_mode.store(true);
-    return OkStatus();
-  }
-  Tensor tmp;
-  if (std::is_same<T, Variant>::value) {
-    AllocatorAttributes attr;
-    attr.set_on_host(true);
-    TF_RETURN_IF_ERROR(ctx->allocate_temp(var->tensor()->dtype(),
-                                          var->tensor()->shape(), &tmp, attr));
-
-    const auto elements_in = var->tensor()->flat<Variant>();
-    auto elements_out = tmp.flat<Variant>();
-    for (int64_t i = 0; i < elements_in.size(); ++i) {
-      elements_out(i) = elements_in(i);
-    }
-  } else {
-    TF_RETURN_IF_ERROR(ctx->allocate_temp(var->tensor()->dtype(),
-                                          var->tensor()->shape(), &tmp));
-
-    if (tmp.NumElements() != 0) {
-      sycl::queue q = GetSYCLQueue(ctx);
-      q.memcpy(tmp.data(), var->tensor()->data(),
-               tmp.NumElements() * sizeof(T));
-    }
-  }
-  *var->tensor() = tmp;
-  var->copy_on_read_mode.store(true);
-  return OkStatus();
-}
-
-// Returns a borrowed pointer to the mutex for the variable `input` in `ctx`.
-//
-// If `input` corresponds to a `DT_RESOURCE`-type variable input,
-// `*maybe_resource` will be updated to contain the underlying resource, and the
-// caller will be responsible for calling `Unref()` on that resource.
-template <typename T>
-mutex* GetTrainingVariableMutex(OpKernelContext* ctx, int input, bool sparse,
-                                Var** maybe_resource) {
-  *maybe_resource = nullptr;
-  if (ctx->input_dtype(input) == DT_RESOURCE) {
-    if (LookupResource(ctx, HandleFromInput(ctx, input), maybe_resource).ok()) {
-      if (sparse) {
-        EnsureSparseVariableAccess<T>(ctx, *maybe_resource).IgnoreError();
-      }
-      return (*maybe_resource)->mu();
+struct XPUDevice{
+  sycl::queue GetSYCLQueue() const {
+    TF_Status* s = TF_NewStatus();
+    auto sp_stream = TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(ctx_), s);
+    if (TF_GetCode(s) == TF_OK) {
+      TF_DeleteStatus(s);
+      return *(reinterpret_cast<SP_Stream_st*>(sp_stream)->stream_handle);
     } else {
-      ctx->CtxFailureWithWarning(
-          errors::Internal("Invalid variable reference."));
-      return nullptr;
+      std::string err_msg = TF_Message(s);
+      TF_DeleteStatus(s);
+      throw std::runtime_error("Failed to get stream, error message: " + err_msg);
     }
-  }
-  return ctx->input_ref_mutex(input);
+  } 
+
+  OpKernelContext* ctx_ = nullptr;
+};
+
+template <>
+const XPUDevice& OpKernelContext::eigen_device() const {
+  static XPUDevice global_xpu_device;
+  global_xpu_device.ctx_ = const_cast<OpKernelContext*>(this);
+  return global_xpu_device;
 }
 
-// MaybeLockVariableInputMutexesInOrder is a helper function to acquire mutexes
-// in address order to mitigate deadlock.  Returns a structure that, when
-// deleted, will release the acquired mutexes. Safe to pass duplicates - will
-// only lock each distinct mutex once. If sparse is true will ensure the
-// variable gets switched to copy-on-read mode before trying to acquire the
-// locks. If do_lock is false, returns immediately for reference variables. For
-// resource variables in copy-on-read-mode it will grab a shared lock if do_lock
-// is false, exclusive lock otherwise.  Note that this silently doesn't lock
-// mutexes for invalid variable references; in all usages this is followed by
-// GetInputTensor which will signal a failure.
+namespace functor {
 template <typename T>
-VariableInputLockHolder
-MaybeLockVariableInputMutexesInOrder(OpKernelContext* ctx, bool do_lock,
-                                     bool sparse,
-                                     const std::vector<int>& input_ids) {
-  bool any_resource = false;
-  for (auto i : input_ids) {
-    if (ctx->input_dtype(i) == DT_RESOURCE) {
-      any_resource = true;
-      break;
+struct DenseUpdate<XPUDevice, T, ASSIGN> {
+  void operator()(const XPUDevice& d, typename TTypes<T>::Flat params,
+                  typename TTypes<T>::ConstFlat update) {
+    if (params.size() != 0) {
+        sycl::queue q = d.GetSYCLQueue();
+        q.memcpy(params.data(), update.data(), params.size() * sizeof(T));
     }
   }
-  if (!do_lock && !any_resource) {
-    return VariableInputLockHolder({}, {}, {});
-  }
-  std::vector<Var*> vars;
-  std::vector<mutex*> mutexes;
-  std::vector<int> acquire_order;
-  for (auto input : input_ids) {
-    Var* var;
-    mutex* mutex = GetTrainingVariableMutex<T>(ctx, input, sparse, &var);
-    if (var)
-      vars.push_back(var);
-    // Only lock each mutex once if duplicates exist (n^2 but n is 2 or 3).
-    if (std::find(mutexes.begin(), mutexes.end(), mutex) == mutexes.end()) {
-      acquire_order.push_back(mutexes.size());
-      mutexes.push_back(mutex);
-    }
-  }
-  std::sort(acquire_order.begin(), acquire_order.end(),
-            [&mutexes](int a, int b) { return mutexes[a] < mutexes[b]; });
+};
 
-  auto locks = std::make_unique<std::vector<mutex_lock>>();
-  auto shared_locks = std::make_unique<std::vector<tf_shared_lock>>();
-  locks->reserve(acquire_order.size());
-
-  for (auto acquire : acquire_order) {
-    mutex* mu = mutexes[acquire];
-    if (mu != nullptr) {
-      if (!sparse || do_lock) {
-        locks->emplace_back(*mu);
-      } else {
-        shared_locks->emplace_back(*mu);
-      }
-    }
-  }
-  return VariableInputLockHolder(std::move(vars), std::move(locks),
-                                 std::move(shared_locks));
-}
-
-// This is for use with ResourceVariables to ensure *tensor has a
-// reference count of 1 before you update it.
-// REQUIRES: If you pass in variable->tensor(), *variable->mu() must be held.
-template <typename T>
-Status PrepareToUpdateVariable(OpKernelContext* ctx, Tensor* tensor,
-                               bool copy_on_read_mode) {
-  if (copy_on_read_mode || !tensor->RefCountIsOne()) {
-    // Tensor's buffer is in use by some read, so we need to copy before
-    // updating.
-    Tensor tmp;
-    if (std::is_same<T, Variant>::value) {
-      AllocatorAttributes attr;
-      attr.set_on_host(true);
-      TF_RETURN_IF_ERROR(
-          ctx->allocate_temp(tensor->dtype(), tensor->shape(), &tmp, attr));
-
-      const auto elements_in = tensor->flat<Variant>();
-      auto elements_out = tmp.flat<Variant>();
-      for (int64_t i = 0; i < elements_in.size(); ++i) {
-        elements_out(i) = elements_in(i);
-      }
-    } else {
-      TF_RETURN_IF_ERROR(
-          ctx->allocate_temp(tensor->dtype(), tensor->shape(), &tmp));
-
-      if (tmp.NumElements() != 0) {
-        sycl::queue q = GetSYCLQueue(ctx);
-        q.memcpy(tmp.data(), tensor->data(), tmp.NumElements() * sizeof(T));
-      }
-    }
-    *tensor = tmp;
-  }
-  return OkStatus();
-}
-
-// This gives you `*out`, a tensor you can update, corresponding to a variable
-// passed as input index `input`.  This handles the differences between
-// reference and resource variables. For reference variables we can just grab
-// the tensor, grabbing the lock if lock_held is False.
-//
-// For resource variables we, if sparse is true, ensure it's in copy-on-read
-// mode, and then, regardless of the value of sparse, ensure its refcount is 1
-// (by potentially copying its contents). In this case lock_held is ignored.
-template <typename T>
-Status GetInputTensorFromVariable(OpKernelContext* ctx, int input,
-                                  bool lock_held, bool sparse, Tensor* out) {
-  if (ctx->input_dtype(input) == DT_RESOURCE) {
-    core::RefCountPtr<Var> var;
-    TF_RETURN_IF_ERROR(LookupResource(ctx, HandleFromInput(ctx, input), &var));
-    if (sparse) {
-      TF_RETURN_IF_ERROR(EnsureSparseVariableAccess<T>(ctx, var.get()));
-      *out = *var->tensor();
-      return OkStatus();
-    }
-    TF_RETURN_IF_ERROR(PrepareToUpdateVariable<T>(
-        ctx, var->tensor(), var->copy_on_read_mode.load()));
-    *out = *var->tensor();
-    return OkStatus();
-  }
-  *out = ctx->mutable_input(input, lock_held);
-  return OkStatus();
-}
-} // end namespace
+} // end namespace functor
 } // end namespace tensorflow
+
+typedef tensorflow::XPUDevice XPUDevice;
 
 #endif // INPLACE_BROADCAST_SYCL_HELPER
