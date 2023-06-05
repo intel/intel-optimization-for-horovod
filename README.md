@@ -1,4 +1,4 @@
-Intel® Optimization for Horovod* is the distributed training framework for TensorFlow* and PyTorch*. The goal is to make distributed Deep Learning workload run faster and easier to use on Intel GPU devices. It's developed based on latest release version v0.26.1 of public [Horovod](https://github.com/horovod/horovod).
+Intel® Optimization for Horovod* is the distributed training framework for TensorFlow* and PyTorch*. The goal is to make distributed Deep Learning workload run faster and easier to use on Intel GPU devices. It's developed based on latest release version v0.28.0 of public [Horovod](https://github.com/horovod/horovod).
 
 ## Install
 

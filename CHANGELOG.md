@@ -8,7 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Added support for torch conv3d with channels_last_3d format.
+
 ### Changed
+
+- Refined batch memory copy kernel and supported padding to align w/ public logic, and updated corresponding cases.
+- Rebased code to public v0.28.0 release.
+- Aligned installation method w/ public HVD.
+- Refined BroadcastInplaceOp for TF.
+- Enabled public horovod examples of tensorflow for IOH.
+- Handled datatype bfloat16 for DPCPP only.
+- Skipped accuracy check for bf16/fp16 on ranks > 2 temporarily because not sure how to change threshold when rank increase.
 
 ### Deprecated
 
@@ -16,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- Fixed SDL warning.
+- Fixed hvd.join with allreduce.
+- Fixed scale factor related accuracy issue for bf16/fp16.
+- Fixed cpu_operation from CCL to MPI when enable INTEL GPU.
 
 ## [v0.5.0] - YYYY-MM-DD
 
