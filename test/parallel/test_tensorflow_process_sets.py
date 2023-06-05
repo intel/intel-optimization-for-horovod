@@ -29,6 +29,10 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     """
     def __init__(self, *args, **kwargs):
         super(TensorFlowProcessSetsTests, self).__init__(*args, **kwargs)
+        if tf.config.list_physical_devices('XPU'):
+            # (TODO: Pengfei) Remove this variable after itex support GPUMemory allocation retry.
+            import os
+            os.environ['ITEX_LIMIT_MEMORY_SIZE_IN_MB'] = '4096'
 
     @classmethod
     def setUpClass(cls):
@@ -75,7 +79,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """ Test on CPU that allreduce correctly sums if restricted to non-global process sets"""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
@@ -114,7 +118,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     def test_horovod_allreduce_gpu_process_sets(self):
         """ Test on GPU that allreduce correctly sums if restricted to non-global process sets"""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -184,7 +188,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test the correctness of the allreduce gradient on CPU if restricted to non-global process sets."""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # As of TensorFlow v1.9, gradients are not supported on
@@ -239,7 +243,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test on CPU that the grouped allreduce correctly sums if restricted to non-global process sets"""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
@@ -277,7 +281,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_allreduce_gpu_process_sets(self):
         """Test on GPU that the grouped allreduce correctly sums if restricted to non-global process sets"""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
             # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
@@ -323,7 +327,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         if restricted to non-global process sets."""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # As of TensorFlow v1.9, gradients are not supported on
@@ -381,7 +385,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test that the allgather correctly gathers 1D, 2D, 3D tensors if restricted to non-global process sets."""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         if rank in self.even_ranks:
@@ -428,7 +432,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     def test_horovod_allgather_gpu_process_sets(self):
         """Test that the allgather correctly gathers 1D, 2D, 3D tensors if restricted to non-global process sets."""
 
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -484,7 +488,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         if rank in self.even_ranks:
@@ -549,7 +553,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -587,7 +591,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test that the broadcast correctly broadcasts 1D, 2D, 3D tensors on GPU
          if restricted to non-global process sets"""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -598,7 +602,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         local_rank = hvd.local_rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -636,7 +640,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -666,7 +670,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -718,7 +722,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test that the alltoall on restricted process sets correctly distributes 1D, 2D, and 3D tensors."""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         if rank in self.even_ranks:
@@ -761,7 +765,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_alltoall_gpu_process_sets(self):
         """Test that the GPU alltoall on restricted process sets correctly distributes 1D, 2D, and 3D tensors."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -817,7 +821,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test the correctness of the alltoall gradient on CPU with restricted process sets."""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         if rank in self.even_ranks:
@@ -868,7 +872,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -907,7 +911,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -944,7 +948,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -1043,7 +1047,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_cpu_process_sets(self):
         """Test on CPU that the reducescatter correctly sums or averages and scatters 1D, 2D, 3D tensors
         if restricted to non-global process sets."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -1093,7 +1097,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_gpu_process_sets(self):
         """Test that the reducescatter works on GPUs if restricted to non-global process sets."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1147,7 +1151,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_grad_cpu_process_sets(self):
         """Test the correctness of the reducescatter gradient on CPU if restricted to non-global process sets."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -1206,7 +1210,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_cpu_process_sets(self):
         """Test on CPU that the grouped reducescatter correctly sums if restricted to non-global process sets"""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -1262,7 +1266,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         if restricted to non-global process sets."""
         rank = hvd.rank()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         if rank in self.even_ranks:

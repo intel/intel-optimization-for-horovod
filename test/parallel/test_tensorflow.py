@@ -53,9 +53,12 @@ class TensorFlowTests(BaseTensorFlowTests):
     """
     def __init__(self, *args, **kwargs):
         super(TensorFlowTests, self).__init__(*args, **kwargs)
+        if tf.config.list_physical_devices('XPU'):
+            # (TODO: Pengfei) Remove this variable after itex support GPUMemory allocation retry.
+            os.environ['ITEX_LIMIT_MEMORY_SIZE_IN_MB'] = '4096'
 
     def test_gpu_required(self):
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             skip_or_fail_gpu_test(self, "No GPUs available")
 
     def test_horovod_rank(self):
@@ -483,7 +486,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_indexed_slices_gpu(self):
         """Test on GPU that the allreduce correctly sums tf.IndexedSlices."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -536,7 +539,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_indexed_slices_average_gpu(self):
         """Test on GPU that the allreduce correctly averages tf.IndexedSlices."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -621,7 +624,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_gpu(self):
         """Test that the allreduce works on GPUs."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -663,7 +666,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_average_gpu(self):
         """Test that the allreduce with average works on GPUs."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -706,7 +709,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_min_gpu(self):
         """Test on GPU that the allreduce correctly minimizes 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -737,7 +740,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_max_gpu(self):
         """Test on GPU that the allreduce correctly maximizes 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -768,7 +771,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_product_gpu(self):
         """Test on GPU that the allreduce correctly multiplies 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -813,7 +816,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         not support GPU memory transfers directly, as it will call MPI_Send on
         a GPU data pointer."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -862,7 +865,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         not support GPU memory transfers directly, as it will call MPI_Send on
         a GPU data pointer."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         hvd.init()
@@ -915,7 +918,7 @@ class TensorFlowTests(BaseTensorFlowTests):
            with prescaling"""
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             return
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -966,7 +969,7 @@ class TensorFlowTests(BaseTensorFlowTests):
            with postscaling"""
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             return
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1062,7 +1065,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         """Test that the allreduce raises an error if different ranks try to
         perform reduction on CPU and GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1156,7 +1159,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_grad_gpu(self):
         """Test the correctness of the allreduce gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1198,7 +1201,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allreduce_average_grad_gpu(self):
         """Test the correctness of the allreduce with average gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1643,7 +1646,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_gpu(self):
         """Test on GPU that the grouped allreduce correctly sums 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1684,7 +1687,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_indexed_slices_gpu(self):
         """Test on GPU that the grouped allreduce correctly sums tf.IndexedSlices."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1739,7 +1742,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_mixed_indexed_slices_gpu(self):
         """Test on GPU that the grouped allreduce correctly sums a mix of tensors and tf.IndexedSlices."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1807,7 +1810,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_average_gpu(self):
         """Test on GPU that the grouped allreduce correctly averages 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1846,7 +1849,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_min_gpu(self):
         """Test on GPU that the grouped allreduce correctly finds minimum of 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1878,7 +1881,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_max_gpu(self):
         """Test on GPU that the grouped allreduce correctly finds maximum of 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1910,7 +1913,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_product_gpu(self):
         """Test on GPU that the grouped allreduce correctly finds product of 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1951,7 +1954,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_indexed_slices_average_gpu(self):
         """Test on GPU that the grouped allreduce correctly averages tf.IndexedSlices."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2010,7 +2013,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_mixed_indexed_slices_average_gpu(self):
         """Test on GPU that the grouped allreduce correctly averages a mix of tensors and tf.IndexedSlices."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2118,7 +2121,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allreduce_grad_gpu(self):
         """Test the correctness of the grouped allreduce gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2201,7 +2204,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allgather_gpu(self):
         """Test that the allgather correctly gathers 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2298,7 +2301,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         """Test that the allgather correctly gathers 1D, 2D, 3D tensors
         with Tensor Fusion."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2415,7 +2418,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         Tensor Fusion, even if those tensors have different sizes along the
         first dim."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         hvd.init()
@@ -2477,7 +2480,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         """Test that the allgather correctly gathers 1D, 2D, 3D tensors,
         even if those tensors have different sizes along the first dim."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         hvd.init()
@@ -2665,7 +2668,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_allgather_grad_gpu(self):
         """Test the correctness of the allgather gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2758,7 +2761,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_broadcast_gpu(self):
         """Test that the broadcast correctly broadcasts 1D, 2D, 3D tensors on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -2849,7 +2852,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         if version.parse(tf.__version__) < version.parse('2.6.0'):
             self.skipTest("Custom Ops using resource variables only work with TF 2.6+")
 
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3045,7 +3048,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_broadcast_grad_gpu(self):
         """Test the correctness of the broadcast gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3130,7 +3133,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_alltoall_gpu(self):
         """Test that the alltoall correctly distributes 1D, 2D, and 3D tensors on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3140,7 +3143,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         # This test does not apply if NCCL version < 2.7.0
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
-
+                
         hvd.init()
         rank = hvd.rank()
         local_rank = hvd.local_rank()
@@ -3207,7 +3210,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_alltoall_equal_split_gpu(self):
         """Test that the alltoall correctly distributes 1D tensors with default splitting on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3270,7 +3273,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         # ncclGroupEnd failed: invalid usage
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3280,6 +3283,9 @@ class TensorFlowTests(BaseTensorFlowTests):
         # This test does not apply if NCCL version < 2.7.0
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
+        
+        if hvd.sycl_built():
+            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
 
         hvd.init()
         local_rank = hvd.local_rank()
@@ -3348,7 +3354,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_alltoall_one_rank_sends_nothing_gpu(self):
         """Test where one rank sends nothing in an alltoall."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3358,6 +3364,9 @@ class TensorFlowTests(BaseTensorFlowTests):
         # This test does not apply if NCCL version < 2.7.0
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
+        
+        if hvd.sycl_built():
+            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
 
         hvd.init()
         local_rank = hvd.local_rank()
@@ -3452,7 +3461,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         # ncclGroupEnd failed: invalid usage
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3462,6 +3471,9 @@ class TensorFlowTests(BaseTensorFlowTests):
         # This test does not apply if NCCL version < 2.7.0
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
+
+        if hvd.sycl_built():
+            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
 
         hvd.init()
         size = hvd.size()
@@ -3556,7 +3568,7 @@ class TensorFlowTests(BaseTensorFlowTests):
             self.skipTest("Only one worker available")
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3566,6 +3578,9 @@ class TensorFlowTests(BaseTensorFlowTests):
         # This test does not apply if NCCL version < 2.7.0
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
+        
+        if hvd.sycl_built():
+            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
 
         active_ranks = range(0, hvd.size() // 2)
         silent_ranks = range(hvd.size() // 2, hvd.size())
@@ -3721,7 +3736,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_alltoall_grad_gpu(self):
         """Test the correctness of the alltoall gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -3816,7 +3831,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_alltoall_equal_split_grad_gpu(self):
         """Test the correctness of the alltoall gradient with default splitting on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4032,7 +4047,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_join_allreduce(self):
         """Test that the hvd.join with allreduce works on GPUs."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4085,7 +4100,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_syncbn_gpu(self):
         """Test that the SyncBatchNormalization implementation is correct on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         hvd.init()
@@ -4293,7 +4308,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_cpu(self):
         """Test on CPU that the reducescatter correctly sums or averages and scatters 1D, 2D, 3D tensors."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4332,7 +4347,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_cpu_prescale(self):
         """Test on CPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4375,7 +4390,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_cpu_postscale(self):
         """Test on CPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4421,7 +4436,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_cpu_fused(self):
         """Test on CPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors
         with Tensor Fusion."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4460,7 +4475,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_cpu_uneven(self):
         """Test on CPU that the reducescatter correctly sums and scatters tensors that cannot
            be distributed evenly over the Horovod processes"""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4510,7 +4525,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_cpu_uneven_fused(self):
         """Test on CPU that the reducescatter correctly sums and scatters tensors that cannot
            be distributed evenly over the Horovod processes, with Tensor Fusion"""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4564,7 +4579,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                         "hvd.reducescatter produces incorrect results")
 
     def test_horovod_reducescatter_scalar_error(self):
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4577,7 +4592,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_gpu(self):
         """Test that the reducescatter works on GPUs."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4621,7 +4636,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_gpu_prescale(self):
         """Test that the reducescatter works on GPUs with prescaling."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4666,7 +4681,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_gpu_postscale(self):
         """Test on GPU that the reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4716,7 +4731,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         This test will crash badly if used with an MPI implementation that does
         not support GPU memory transfers directly, as it will call MPI_Send on
         a GPU data pointer."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4760,7 +4775,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_gpu_uneven(self):
         """Test on GPU that the reducescatter correctly sums and scatters tensors that cannot
            be distributed evenly over the Horovod processes"""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4815,7 +4830,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_gpu_uneven_fused(self):
         """Test on GPU that the reducescatter correctly sums and scatters tensors that cannot
            be distributed evenly over the Horovod processes, with Tensor Fusion"""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -4876,7 +4891,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_error(self):
         """Test that the reducescatter raises an error if different ranks try to
         send tensors of different rank or dimension."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4906,7 +4921,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_type_error(self):
         """Test that the reducescatter raises an error if different ranks try to
         send tensors of different type."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4927,7 +4942,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_grad_cpu(self):
         """Test the correctness of the reducescatter gradient on CPU."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4967,7 +4982,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_reducescatter_grad_gpu(self):
         """Test the correctness of the reducescatter gradient on GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -5008,7 +5023,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_cpu(self):
         """Test on CPU that the grouped reducescatter correctly sums or averages and scatters 1D, 2D, 3D tensors."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -5045,7 +5060,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_cpu_prescale(self):
         """Test on CPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -5088,7 +5103,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_cpu_postscale(self):
         """Test on CPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -5132,7 +5147,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
 
     def test_horovod_grouped_reducescatter_scalar_error(self):
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -5145,7 +5160,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_grad_cpu(self):
         """Test the correctness of the grouped reducescatter gradient on CPU."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -5185,7 +5200,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_gpu(self):
         """Test that the grouped reducescatter works on GPUs."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -5231,7 +5246,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_gpu_prescale(self):
         """Test on GPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
             # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
@@ -5274,7 +5289,7 @@ class TensorFlowTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_reducescatter_gpu_postscale(self):
         """Test on GPU that the grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling"""
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest("No GPUs available")
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
             # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
@@ -5411,7 +5426,7 @@ class TensorFlowTests(BaseTensorFlowTests):
     def test_horovod_grouped_allgather_gpu(self):
         """Test that the grouped allgather correctly gathers 1D, 2D, 3D tensors."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -5497,7 +5512,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 local_vars = [var for layer in local_layers for var in layer.trainable_weights]
 
             local_rank = hvd.local_rank()
-            if tf.test.is_gpu_available(cuda_only=True):
+            if tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
                 with tf.device("/gpu:%d" % local_rank):
                     tape = hvd.PartialDistributedGradientTape(tape, local_layers=local_layers)
                     allreduced_gradients = tape.gradient(l, model.trainable_weights)
@@ -5574,7 +5589,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         rank = hvd.rank()
         local_rank = hvd.local_rank()
 
-        if tf.test.is_gpu_available(cuda_only=True):
+        if tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             with tf.device("/gpu:%d" % local_rank):
                 mp_model = DummyMPModel2Devices()
                 optimizer = tf.keras.optimizers.SGD(learning_rate=1.)
@@ -5607,7 +5622,7 @@ class TensorFlowTests(BaseTensorFlowTests):
             optimizer.apply_gradients(zip(gradients, mp_model.trainable_variables))
             return loss
 
-        if tf.test.is_gpu_available(cuda_only=True):
+        if tf.test.is_gpu_available(cuda_only=True) and not tf.config.list_physical_devices('XPU'):
             with tf.device("/gpu:%d" % local_rank):
                 # "Transpose" input from data parallel to model parallel
                 mp_inputs = hvd.alltoall(dp_inputs)
