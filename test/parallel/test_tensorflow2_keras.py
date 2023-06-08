@@ -55,13 +55,13 @@ class Tf2KerasTests(tf.test.TestCase):
         warnings.simplefilter('module')
         hvd.init()
 
-        device_name = 'XPU' if hvd.sycl_built() else 'GPU'
-        gpus = tf.config.experimental.list_physical_devices(device_name)
+        device_type = 'XPU' if hvd.sycl_built() else 'GPU'
+        gpus = tf.config.experimental.list_physical_devices(device_type)
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
         if gpus:
             tf.config.experimental.set_visible_devices(
-                gpus[hvd.local_rank()], device_name)
+                gpus[hvd.local_rank()], device_type)
 
     def test_train_model_lr_schedule(self):
         initial_lr = 0.1 * hvd.size()
