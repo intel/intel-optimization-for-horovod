@@ -3,20 +3,14 @@
 Horovod on Intel GPU
 ====================
 
-Intel deliveres **Intel® oneAPI (DPC++ compiler/oneCCL/IMPI included)** software stack into Horovod to make TensorFlow distributed workloads run on `Intel GPU devices <https://www.intel.com/content/www/us/en/products/details/discrete-gpus.html>`__
+Intel has brought **Intel® oneAPI (DPC++ compiler/oneCCL/IMPI included)** software stack into Horovod to make TensorFlow distributed workloads run on `Intel GPU devices <https://www.intel.com/content/www/us/en/products/details/discrete-gpus.html>`__
 together with `Intel® Extension for TensorFlow* <https://github.com/intel/intel-extension-for-tensorflow>`__, which is an open-source solution to run TensorFlow on Intel AI hardware.
-
-**Intel® oneAPI** is an initiative to deliver a unified and open programming experience to developers on any architecture,
-such as CPUs, GPUs, FPGAs, and AI accelerators. Intel is promoting oneAPI as the industry standard and 
-delivers Intel oneAPI products (an implementation of oneAPI standard) for high-performance heterogeneous computing.
 
 DPC++ compiler/oneCCL/IMPI packaged into oneAPI Base Tookit are core set of tools and libraries for developing high-performance computing and cross-devices communication applications. 
 **DPC++ compiler** is an extension of C++ for heterogeneous computing and based on SYCL. 
 **OneCCL** (oneAPI Collective Communications Library) and **IMPI** provide high-performance communication patterns for distributed workloads in Intel® GPU cluster.
 
-In most situations, using oneCCL on Intel GPUs will significantly improve performance over the CPU version.
-
-To use Horovod on Intel GPU, follow steps below.
+To use Horovod on Intel GPU, please follow steps below.
 
 Install Intel GPU driver
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,9 +49,9 @@ Setup environment variables
 Install Deep Learning Frameworks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To bring Intel GPU devices into **TensorFlow** community for AI workload acceleration, Intel promoted a new user visible ``XPU`` device type as a device abstraction for Intel heterogeneous computation architectures and implemented corresponding device runtime in **Intel® Extension for TensorFlow**.
+To bring Intel GPU devices into **TensorFlow** community for AI workload acceleration, Intel promoted a new user visible ``XPU`` device type as a device abstraction for Intel computation architectures and implemented corresponding device runtime in **Intel® Extension for TensorFlow**.
 
-If want to use **TensorFlow**, install `Tensorflow 2.12.0  <https://www.tensorflow.org/install>`__  and `Intel® Extension for TensorFlow* 1.2 <https://github.com/intel/intel-extension-for-tensorflow/tree/r1.2#install>`__.
+To use **TensorFlow** and **Intel® Extension for TensorFlow**, please follow `Tensorflow 2.12.0 installation <https://www.tensorflow.org/install>`__  and `Intel® Extension for TensorFlow* 1.2 installation <https://github.com/intel/intel-extension-for-tensorflow/tree/r1.2#install>`__.
 
 Install the Horovod pip package
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -66,5 +60,10 @@ Install the Horovod pip package
 
    $ python setup.py sdist
    $ CC=icx CXX=icpx pip install --no-cache-dir dist/*.tar.gz
+
+Get started with TensorFlow models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To use horovod with models implemented by Tensorflow, please refer to `Horovod with TensorFlow <tensorflow.rst>`_  to modify your training script or see `tensorflow2 examples <https://github.com/horovod/horovod/blob/master/examples/tensorflow2/>`_ directory for full training examples.
 
 .. inclusion-marker-end-do-not-remove

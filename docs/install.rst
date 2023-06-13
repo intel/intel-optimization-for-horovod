@@ -180,10 +180,7 @@ oneCCL
 
 `oneCCL(oneAPI Collective Communications Library) <https://www.intel.com/content/www/us/en/developer/tools/oneapi/oneccl.html>`_
 provides an efficient implementation of collective operations like Reduce, Allreduce, Broadcast, Allgather, Reducescatter
-and Alltoall.
-
-oneCCL operations are supported on both Intel CPUs and Intel GPUs, but the CPU version and the GPU version of oneCCL need different
-software stacks and settings.
+and Alltoall, which are supported on both Intel CPU and Intel GPU devices.
 
 To enable oneCCL operations on Intel GPUs, see `Horovod with oneCCL on Intel GPU <intel_gpus.rst>`_ for details.
 

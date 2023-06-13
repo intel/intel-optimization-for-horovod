@@ -31,7 +31,7 @@ To use Horovod with TensorFlow, make the following modifications to your trainin
        if gpus:
            tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], device_type)
 
-   **Note**: For Nvidia/AMD GPU devices, their device_type are ``GPU`` in Tensorflow. For Intel GPU devices, follow `Horovod on Intel GPU <intel_gpus.rst>`_ and use ``XPU`` as device_type in Tensorflow.
+   **Note**: For Nvidia GPU devices, their device_type are ``GPU`` in Tensorflow. For Intel GPU devices, follow `Horovod on Intel GPU <intel_gpus.rst>`_ to install software dependency and use ``XPU`` device_type as a device abstraction for Intel computation architectures.
 
 .. raw:: html
 
