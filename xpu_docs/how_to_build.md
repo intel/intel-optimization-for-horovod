@@ -75,16 +75,37 @@ $ source /path/to/intel/oneapi/mpi/latest/env/vars.sh
 $ source /path/to/intel/oneapi/ccl/latest/env/vars.sh
 ```
 
-- build and install
+
+
+#### Build and install released version from pip channel
 
 ```bash
-# will get package named xxx.tar.gz
+$ CC=icx CXX=icpx \
+pip install --no-cache-dir intel-optimization-for-horovod
+```
+
+#### Build from source
+
+If you want to change code locally and build from source:
+
+- Option 1: build and install from source code package
+
+```bash
+# will get a package located at dist/intel-optimization-for-horovod-*.tar.gz
 $ python setup.py sdist
 
 $ CC=icx CXX=icpx \
-pip install --no-cache-dir intel-optimization-for-horovod -f <Path to tar.gz>
+pip install --no-cache-dir intel-optimization-for-horovod -f dist/intel-optimization-for-horovod-*.tar.gz
 ```
 
+- Option 2: build python wheels and install
+
+```bash
+$ CC=icx CXX=icpx \
+python setup.py bdist_wheel
+
+$ pip install dist/intel-optimization-for-horovod-*.whl
+```
 
 
 ## Runtime

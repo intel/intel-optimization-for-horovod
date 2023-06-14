@@ -156,14 +156,6 @@ if (NOT "$ENV{HOROVOD_WITHOUT_MPI}" STREQUAL "1")
     endif()
 endif()
 
-# TODO(Maozhou): Remove it when switch to new cmd
-# Check for intel DPC++ compiler
-if (CMAKE_CXX_COMPILER MATCHES "icpx$")
-    add_definitions(-DHAVE_SYCL=1)
-    set(USE_SYCL TRUE)
-    set(USE_DPCPP TRUE)
-endif ()
-
 # oneCCL
 set(CCL_ROOT $ENV{CCL_ROOT})
 if(DEFINED CCL_ROOT)
