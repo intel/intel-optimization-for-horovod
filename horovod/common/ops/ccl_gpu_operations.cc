@@ -314,10 +314,11 @@ void CCLGPUAllreduce::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    // TODO(Maozhou): replace with barrier
-    for (auto ev : event_set) {
-      ev.wait();
-    }
+    std::vector<gpuEvent_t> wait_list(event_set.cbegin(), event_set.cend());
+    auto stream =
+        gpu_context_
+            ->streams[global_state_->current_nccl_stream][entries[0].device];
+    stream->ext_oneapi_submit_barrier(wait_list);
   }
 }
 
@@ -385,9 +386,11 @@ void CCLGPUBroadcast::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    for (auto ev : event_set) {
-      ev.wait();
-    }
+    std::vector<gpuEvent_t> wait_list(event_set.cbegin(), event_set.cend());
+    auto stream =
+        gpu_context_
+            ->streams[global_state_->current_nccl_stream][entries[0].device];
+    stream->ext_oneapi_submit_barrier(wait_list);
   }
 }
 
@@ -585,9 +588,11 @@ void CCLGPUAllgather::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    for (auto ev : event_set) {
-      ev.wait();
-    }
+    std::vector<gpuEvent_t> wait_list(event_set.cbegin(), event_set.cend());
+    auto stream =
+        gpu_context_
+            ->streams[global_state_->current_nccl_stream][entries[0].device];
+    stream->ext_oneapi_submit_barrier(wait_list);
   }
 }
 
@@ -659,9 +664,11 @@ void CCLGPUAlltoall::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    for (auto ev : event_set) {
-      ev.wait();
-    }
+    std::vector<gpuEvent_t> wait_list(event_set.cbegin(), event_set.cend());
+    auto stream =
+        gpu_context_
+            ->streams[global_state_->current_nccl_stream][entries[0].device];
+    stream->ext_oneapi_submit_barrier(wait_list);
   }
 }
 
@@ -804,9 +811,11 @@ void CCLGPUReducescatter::WaitForData(std::vector<TensorTableEntry>& entries) {
     for (auto& e : entries) {
       e.ready_event_list.PushEventsToSet(event_set);
     }
-    for (auto ev : event_set) {
-      ev.wait();
-    }
+    std::vector<gpuEvent_t> wait_list(event_set.cbegin(), event_set.cend());
+    auto stream =
+        gpu_context_
+            ->streams[global_state_->current_nccl_stream][entries[0].device];
+    stream->ext_oneapi_submit_barrier(wait_list);
   }
 }
 
