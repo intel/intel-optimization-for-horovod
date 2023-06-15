@@ -237,7 +237,7 @@ sycl::queue TorchOpContext::SYCLQueue() const {
   }
   auto pQueue=PyObject_GetAttrString(pResult, (char*) "sycl_queue");
   sycl::queue *qResult;
-  qResult= static_cast<sycl::queue *>(PyLong_AsVoidPtr(pQueue));
+  qResult= static_cast<sycl::queue *>(PyCapsule_GetPointer(pQueue, "torch.xpu.Stream.sycl_queue"));
   /* release python thread */
   PyGILState_Release(gstate);
   return *qResult;
