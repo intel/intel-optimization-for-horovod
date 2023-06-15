@@ -654,7 +654,7 @@ def local_rank_op(name=None):
     Returns:
       An integer scalar with the local Horovod rank of the calling process.
     """
-    return MPI_LIB.horovod_rank(name=name)
+    return MPI_LIB.horovod_local_rank(name=name)
 
 
 ops.NotDifferentiable('HorovodLocalRank')
