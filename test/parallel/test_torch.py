@@ -33,6 +33,11 @@ from datetime import datetime
 import numpy as np
 import pytest
 import torch
+try:
+    import intel_extension_for_pytorch
+except:
+    pass
+
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -79,15 +84,23 @@ class TorchTests(unittest.TestCase):
         # In case we need to do ops, we will convert tensor to FP32 here.
         result = []
         for value in values:
-            if value.dtype in [torch.float16, torch.HalfTensor] and not value.is_cuda:
+            if value.dtype in [torch.float16, torch.HalfTensor] and not value.is_cuda and not value.is_xpu:
                 result.append(value.float())
             else:
                 result.append(value)
         return result
 
+    def is_xpu_available(self):
+        try:
+            return torch.xpu.is_available()
+        except AttributeError:
+            return False
+
     def cast_and_place(self, tensor, dtype):
         if dtype.is_cuda:
             return tensor.cuda(hvd.local_rank()).type(dtype)
+        elif dtype.is_xpu:
+            return tensor.xpu('xpu:{}'.format(hvd.local_rank())).type(dtype)
         return tensor.type(dtype)
 
     def filter_supported_types(self, types):
@@ -96,7 +109,7 @@ class TorchTests(unittest.TestCase):
         return types
 
     def test_gpu_required(self):
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             skip_or_fail_gpu_test(self, "No GPUs available")
 
     def test_horovod_reinit(self):
@@ -175,6 +188,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -188,6 +205,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -208,6 +227,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -219,6 +242,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -240,6 +265,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -263,6 +292,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -286,6 +319,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -300,6 +337,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -320,6 +359,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -333,6 +376,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -354,6 +399,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         tests = []
         is_hvd_poll_false_once = False
@@ -380,6 +429,8 @@ class TorchTests(unittest.TestCase):
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
                 threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
+                threshold = 0
             elif size < 10:
                 threshold = 1e-4
             elif size < 15:
@@ -392,7 +443,7 @@ class TorchTests(unittest.TestCase):
     def test_horovod_allreduce_multi_gpu(self):
         """Test that the allreduce works on multiple GPUs."""
         # Only do this test if there are GPUs available.
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
 
         hvd.init()
@@ -400,13 +451,19 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
 
         # Skip the test if there are not enough GPUs.
-        if torch.cuda.device_count() < hvd.local_size() * 2:
+        if self.is_xpu_available() and torch.xpu.device_count() < hvd.local_size() * 2:
+            self.skipTest("Not enough GPUs available")
+        elif torch.cuda.is_available() and torch.cuda.device_count() < hvd.local_size() * 2:
             self.skipTest("Not enough GPUs available")
 
         iter = 0
         dtypes = [torch.cuda.IntTensor, torch.cuda.LongTensor,
                   torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                   torch.cuda.HalfTensor]
+        if self.is_xpu_available():
+            dtypes = [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                      torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                      torch.xpu.HalfTensor]
 
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
@@ -414,13 +471,18 @@ class TorchTests(unittest.TestCase):
             torch.manual_seed(1234)
             tensor = torch.FloatTensor(*([17] * dim)).random_(-100, 100)
             device = local_rank * 2 + (iter + local_rank) % 2
-            tensor = tensor.cuda(device).type(dtype)
+            if self.is_xpu_available():
+                tensor = tensor.xpu('xpu:{}'.format(device)).type(dtype)
+            else:
+                tensor = tensor.cuda(device).type(dtype)
             multiplied = tensor * size
             hvd.allreduce_(tensor, average=False)
 
             # Threshold for floating point equality depends on number of
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -437,13 +499,21 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         dtypes = self.filter_supported_types([torch.IntTensor, torch.LongTensor,
                  torch.FloatTensor, torch.DoubleTensor, torch.HalfTensor])
+        int_types = [torch.IntTensor, torch.LongTensor]
+        half_types = [torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        int_types = [torch.IntTensor, torch.LongTensor,
-                     torch.cuda.IntTensor, torch.cuda.LongTensor]
-        half_types = [torch.HalfTensor, torch.cuda.HalfTensor]
+            int_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
+            half_types += [torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            int_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
+            half_types += [torch.xpu.HalfTensor]
+           
 
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
@@ -456,8 +526,11 @@ class TorchTests(unittest.TestCase):
                                    prescale_factor=factor)
 
             factor = torch.tensor(factor, dtype=torch.float64)
-            factor = factor.cuda(hvd.local_rank()) if dtype.is_cuda else factor
-            if dtype.is_cuda and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            if dtype.is_cuda:
+                factor = factor.cuda(hvd.local_rank())
+            elif dtype.is_xpu:
+                factor = factor.xpu('xpu:{}'.format(hvd.local_rank()))
+            if (dtype.is_cuda or dtype.is_xpu) and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
               # For integer types, scaling done in FP64
               factor = factor.type(torch.float64 if dtype in int_types else dtype)
               tensor = tensor.type(torch.float64 if dtype in int_types else dtype)
@@ -491,14 +564,21 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         dtypes = self.filter_supported_types([torch.IntTensor, torch.LongTensor,
                  torch.FloatTensor, torch.DoubleTensor, torch.HalfTensor])
+        int_types = [torch.IntTensor, torch.LongTensor]
+        half_types = [torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        int_types = [torch.IntTensor, torch.LongTensor,
-                     torch.cuda.IntTensor, torch.cuda.LongTensor]
-        half_types = [torch.HalfTensor, torch.cuda.HalfTensor]
-
+            int_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
+            half_types += [torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            int_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
+            half_types += [torch.xpu.HalfTensor]
+            
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -510,8 +590,11 @@ class TorchTests(unittest.TestCase):
                                    postscale_factor=factor)
 
             factor = torch.tensor(factor, dtype=torch.float64)
-            factor = factor.cuda(hvd.local_rank()) if dtype.is_cuda else factor
-            if dtype.is_cuda and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            if dtype.is_cuda:
+                factor = factor.cuda(hvd.local_rank())
+            elif dtype.is_xpu:
+                factor = factor.xpu('xpu:{}'.format(hvd.local_rank()))
+            if (dtype.is_cuda or dtype.is_xpu) and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
               # For integer types, scaling done in FP64
               factor = factor.type(torch.float64 if dtype in int_types else dtype)
               tensor = tensor.type(torch.float64 if dtype in int_types else dtype)
@@ -560,6 +643,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -581,6 +668,8 @@ class TorchTests(unittest.TestCase):
             max_process_set_size = max(len(even_ranks), len(odd_ranks))
             if max_process_set_size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif max_process_set_size < 10:
                 threshold = 1e-4
@@ -656,7 +745,7 @@ class TorchTests(unittest.TestCase):
         """Test that the allreduce raises an error if different ranks try to
         perform reduction on CPU and GPU."""
         # Only do this test if there are GPUs available.
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -674,7 +763,10 @@ class TorchTests(unittest.TestCase):
         # Same rank, different dimension
         dims = [17] * 3
         if rank % 2 == 0:
-            tensor = torch.cuda.FloatTensor(*dims)
+            if self.is_xpu_available():
+                tensor = torch.xpu.FloatTensor(*dims)
+            else:
+                tensor = torch.cuda.FloatTensor(*dims)
         else:
             tensor = torch.FloatTensor(*dims)
 
@@ -723,6 +815,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -747,6 +841,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -783,6 +879,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        if self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -821,6 +919,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -834,6 +936,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -855,6 +959,11 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -867,6 +976,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -888,6 +999,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -901,6 +1016,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -933,6 +1050,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -956,6 +1077,8 @@ class TorchTests(unittest.TestCase):
             if max_process_set_size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
                 threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
+                threshold = 0
             elif max_process_set_size < 10:
                 threshold = 1e-4
             elif max_process_set_size < 15:
@@ -973,11 +1096,16 @@ class TorchTests(unittest.TestCase):
         """Test that the grouped allreduce raises an error if the input tensor
         list contains a mix of tensors on CPU and GPU."""
         # Only do this test if there are GPUs available.
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
 
         hvd.init()
-        tensors = [torch.FloatTensor(10) if i % 2 else torch.cuda.FloatTensor(10)  for i in range(5)]
+        tensors = [torch.FloatTensor(10) for i in range(5)]
+        if torch.cuda.is_available():
+            tensors = [torch.FloatTensor(10) if i % 2 else torch.cuda.FloatTensor(10)  for i in range(5)]
+        if self.is_xpu_available():
+            tensors = [torch.FloatTensor(10) if i % 2 else torch.xpu.FloatTensor(10)  for i in range(5)]
+
         try:
             hvd.grouped_allreduce(tensors, average=False)
             assert False, 'hvd.allreduce did not throw error'
@@ -992,6 +1120,9 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
+            
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -1020,6 +1151,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -1060,6 +1193,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -1106,6 +1241,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             tensor = torch.FloatTensor(*([17] * dim)).fill_(1).mul_(rank)
@@ -1137,6 +1277,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             # Support tests up to MPI Size of 35
@@ -1178,6 +1323,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         tests = []
         is_hvd_poll_false_once = False
@@ -1236,6 +1386,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             tensor = torch.FloatTensor(*([17] * dim)).fill_(1).mul_(rank)
@@ -1341,6 +1496,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             # Support tests up to MPI Size of 35
@@ -1399,6 +1556,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        if self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             # Support tests up to MPI Size of 35
@@ -1449,6 +1608,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             tensors = [torch.FloatTensor(*([17] * dim)).fill_(1).mul_(rank) for _ in range(5)]
@@ -1500,6 +1664,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             tensors = [torch.FloatTensor(*([17] * dim)).fill_(1).mul_(rank) for _ in range(5)]
@@ -1534,6 +1703,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             # Support tests up to MPI Size of 35
@@ -1588,6 +1759,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         root_ranks = list(range(size))
         for dtype, dim, root_rank in itertools.product(dtypes, dims, root_ranks):
@@ -1622,6 +1798,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         root_ranks = list(range(size))
         for dtype, dim, root_rank in itertools.product(dtypes, dims, root_ranks):
@@ -1673,6 +1854,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         root_ranks = list(set_ranks)
         for dtype, dim, root_rank in itertools.product(dtypes, dims, root_ranks):
@@ -1800,6 +1986,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         root_ranks = list(range(size))
         for dtype, dim, root_rank in itertools.product(dtypes, dims, root_ranks):
@@ -1850,6 +2038,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         root_ranks = list(set_ranks)
         for dtype, dim, root_rank in itertools.product(dtypes, dims, root_ranks):
@@ -1889,6 +2079,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -1929,6 +2124,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -1954,7 +2154,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
@@ -1962,10 +2162,19 @@ class TorchTests(unittest.TestCase):
         dtypes = self.filter_supported_types([torch.ByteTensor, torch.CharTensor, torch.ShortTensor,
                                               torch.IntTensor, torch.LongTensor, torch.FloatTensor,
                                               torch.DoubleTensor, torch.HalfTensor])
-        dtypes += [torch.cuda.ByteTensor, torch.cuda.CharTensor, torch.cuda.ShortTensor,
-                   torch.cuda.IntTensor, torch.cuda.LongTensor,
-                   torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
-                   torch.cuda.HalfTensor]
+        device = 'cuda'
+        if torch.cuda.is_available():
+            dtypes += [torch.cuda.ByteTensor, torch.cuda.CharTensor, torch.cuda.ShortTensor,
+                       torch.cuda.IntTensor, torch.cuda.LongTensor,
+                       torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
+                       torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            device = 'xpu'
+
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -1977,7 +2186,7 @@ class TorchTests(unittest.TestCase):
               tensor = tensor.unsqueeze(1)
               tensor = torch.cat((tensor, tensor), dim=1)
 
-            splits = torch.tensor([rank + 1] * size, dtype=torch.int32, device="cuda")
+            splits = torch.tensor([rank + 1] * size, dtype=torch.int32, device=device)
             tensor = self.cast_and_place(tensor, dtype)
             collected, received_splits = hvd.alltoall(tensor, splits)
             tensor, collected = self.convert_cpu_fp16_to_fp32(tensor, collected)
@@ -1985,7 +2194,7 @@ class TorchTests(unittest.TestCase):
             assert collected.data.min() == rank, 'hvd.alltoall produces incorrect collected tensor'
             assert collected.data.max() == rank, 'hvd.alltoall produces incorrect collected tensor'
             assert collected.numel() == size * (size + 1) // 2 * 2**(dim - 1), 'hvd.alltoall collected wrong number of values'
-            self.assertEqual(received_splits.device.type, "cuda", "received_splits should be on GPU here")
+            self.assertEqual(received_splits.device.type, device, "received_splits should be on GPU here")
             self.assertSequenceEqual(received_splits.tolist(), [rk + 1 for rk in range(size)],
                                      "hvd.alltoall returned incorrect received_splits")
 
@@ -2027,6 +2236,11 @@ class TorchTests(unittest.TestCase):
                        torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.ByteTensor, torch.xpu.CharTensor, torch.xpu.ShortTensor,
+                       torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -2177,6 +2391,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        if self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
 
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
@@ -2217,7 +2433,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
-
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -2276,7 +2493,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
-
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -2435,12 +2653,12 @@ class TorchTests(unittest.TestCase):
     @unittest.skip
     def test_broadcast_state_gpu(self):
         # Only do this test if there are GPUs available.
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
         # Set default tensor type, ensuring optimizer tensor-wrapping is robust
         # to this setting.
         try:
-            torch.set_default_tensor_type(torch.cuda.FloatTensor)
+            torch.set_default_tensor_type(torch.xpu.FloatTensor if self.is_xpu_available() else torch.cuda.FloatTensor)
             self.test_broadcast_state()
         finally:
             torch.set_default_tensor_type(torch.FloatTensor)
@@ -2711,7 +2929,7 @@ class TorchTests(unittest.TestCase):
     def test_model_parallelism(self):
         """Test that tensors on different GPUs are supported."""
         # Only do this test if there are GPUs available.
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
 
         hvd.init()
@@ -2722,24 +2940,28 @@ class TorchTests(unittest.TestCase):
         if size == 1:
             self.skipTest("Only one worker available")
 
-        # Skip the test if there are not enough GPUs.
-        if torch.cuda.device_count() < hvd.local_size() * 2:
+        if self.is_xpu_available() and torch.xpu.device_count() < hvd.local_size() * 2:
             self.skipTest("Not enough GPUs available")
+        elif torch.cuda.is_available() and torch.cuda.device_count() < hvd.local_size() * 2:
+             self.skipTest("Not enough GPUs available")
 
         first_device = local_rank * 2
         second_device = local_rank * 2 + 1
+        if self.is_xpu_available():
+            first_device = 'xpu:{}'.format(local_rank * 2)
+            second_device = 'xpu:{}'.format(local_rank * 2 + 1)
 
         class Net(torch.nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
                 # Place parts of model on different GPUs.
-                self.conv1 = torch.nn.Conv2d(1, 100, 1).cuda(first_device)
-                self.conv2 = torch.nn.Conv2d(100, 1, 1).cuda(second_device)
+                self.conv1 = torch.nn.Conv2d(1, 100, 1).to(first_device)
+                self.conv2 = torch.nn.Conv2d(100, 1, 1).to(second_device)
 
             def forward(self, x):
-                x = x.cuda(first_device)
+                x = x.to(first_device)
                 x = self.conv1(x)
-                x = x.cuda(second_device)
+                x = x.to(second_device)
                 x = self.conv2(x)
                 return x
 
@@ -2760,10 +2982,16 @@ class TorchTests(unittest.TestCase):
         if not hvd.mpi_enabled():
             # TODO support non-MPI Adasum operation
             self.skipTest("Adasum requires MPI")
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
+        # TODO: remove it once support HVD delta_optimizer on XPU
+        if hvd.sycl_built():
+            self.skipTest("Not support HVD delta_optimizer on XPU yet")
+
 
         local_rank = hvd.local_rank()
+        if self.is_xpu_available():
+            local_rank = 'xpu:{}'.format(hvd.local_rank())
         size = hvd.size()
 
         # This test does not apply if there is only one worker.
@@ -2773,13 +3001,13 @@ class TorchTests(unittest.TestCase):
         class Net(torch.nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
-                self.conv1 = torch.nn.Conv2d(1, 100, 1).cuda(local_rank)
-                self.conv2 = torch.nn.Conv2d(100, 1, 1).cuda(local_rank)
+                self.conv1 = torch.nn.Conv2d(1, 100, 1).to(local_rank)
+                self.conv2 = torch.nn.Conv2d(100, 1, 1).to(local_rank)
 
             def forward(self, x):
-                x = x.cuda(local_rank)
+                x = x.to(local_rank)
                 x = self.conv1(x)
-                x = x.cuda(local_rank)
+                x = x.to(local_rank)
                 x = self.conv2(x)
                 return x
 
@@ -2981,16 +3209,23 @@ class TorchTests(unittest.TestCase):
         hvd.init()
         rank = hvd.rank()
         size = hvd.size()
+        # TODO: remove it once topo algo bug is fixed
+        if hvd.sycl_built():
+            self.skipTest("Skip it due to random failure on OneCCL GPU with default algo(topo), ring algo will always pass.")
 
         dtypes = [torch.IntTensor, torch.LongTensor,
                   torch.FloatTensor, torch.DoubleTensor]
+        integral_types = [torch.IntTensor, torch.LongTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-
-        integral_types = [torch.IntTensor, torch.LongTensor, torch.cuda.IntTensor, torch.cuda.LongTensor]
-
+            integral_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            integral_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
         dims = [1, 2, 3]
         first_join_ranks = list(range(size))
         cachings = [False, True]
@@ -3017,7 +3252,7 @@ class TorchTests(unittest.TestCase):
                 averaged_b = hvd.synchronize(handle_b)
 
             if rank == first_join_rank:
-                if dtype.is_cuda:
+                if dtype.is_cuda or dtype.is_xpu:
                     ret = hvd.join(hvd.local_rank())
                 else:
                     ret = hvd.join()
@@ -3026,7 +3261,7 @@ class TorchTests(unittest.TestCase):
                 handle_b = hvd.allreduce_async(tensor_b, name="tensor_b", average=True)
                 averaged_a = hvd.synchronize(handle_a)
                 averaged_b = hvd.synchronize(handle_b)
-                if dtype.is_cuda:
+                if dtype.is_cuda or dtype.is_xpu:
                     ret = hvd.join(hvd.local_rank())
                 else:
                     ret = hvd.join()
@@ -3069,7 +3304,7 @@ class TorchTests(unittest.TestCase):
 
         for first_join_rank in first_join_ranks:
             if rank == first_join_rank:
-                if torch.cuda.is_available():
+                if torch.cuda.is_available() or self.is_xpu_available():
                     ret = hvd.join(hvd.local_rank())
                 else:
                     ret = hvd.join()
@@ -3080,7 +3315,7 @@ class TorchTests(unittest.TestCase):
                 except (torch.FatalError, RuntimeError):
                     pass
 
-                if torch.cuda.is_available():
+                if torch.cuda.is_available() or self.is_xpu_available():
                     ret = hvd.join(hvd.local_rank())
                 else:
                     ret = hvd.join()
@@ -3116,7 +3351,7 @@ class TorchTests(unittest.TestCase):
                 except (torch.FatalError, RuntimeError):
                     pass
 
-                if torch.cuda.is_available():
+                if torch.cuda.is_available() or self.is_xpu_available():
                     ret = hvd.join(hvd.local_rank())
                 else:
                     ret = hvd.join()
@@ -3129,8 +3364,11 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_sync_batch_norm(self):
         """Tests Horovod version of SyncBatchNorm."""
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
+        # TODO: remove it once support HVD sync_batch_norm on XPU
+        if hvd.sycl_built():
+            self.skipTest("Not support HVD sync_batch_norm on XPU yet")
 
         hvd.init()
 
@@ -3155,14 +3393,17 @@ class TorchTests(unittest.TestCase):
             ]),
         ]
 
+        local_rank = hvd.local_rank()
+        if self.is_xpu_available():
+            local_rank = 'xpu:{}'.format(hvd.local_rank())
         for ts in ts_list:
             sync_bn = hvd.SyncBatchNorm(num_features=4)
-            sync_bn.cuda(hvd.local_rank())
+            sync_bn.to(local_rank)
 
             bn = torch.nn.BatchNorm1d(num_features=4)
-            bn.cuda(hvd.local_rank())
+            bn.to(local_rank)
 
-            ts = ts.cuda(hvd.local_rank()).float()
+            ts = ts.to(local_rank).float()
             ts1 = ts.clone().requires_grad_()
             ts2 = ts.clone().requires_grad_()
 
@@ -3546,6 +3787,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -3559,6 +3804,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -3586,6 +3833,9 @@ class TorchTests(unittest.TestCase):
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -3598,6 +3848,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -3622,13 +3874,20 @@ class TorchTests(unittest.TestCase):
         dtypes = self.filter_supported_types([torch.IntTensor, torch.LongTensor,
                                               torch.FloatTensor, torch.DoubleTensor,
                                               torch.HalfTensor])
+        int_types = [torch.IntTensor, torch.LongTensor]
+        half_types = [torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        int_types = [torch.IntTensor, torch.LongTensor,
-                     torch.cuda.IntTensor, torch.cuda.LongTensor]
-        half_types = [torch.HalfTensor, torch.cuda.HalfTensor]
+            int_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
+            half_types += [torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            int_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
+            half_types += [torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         np.random.seed(12345)
         for dtype, dim in itertools.product(dtypes, dims):
@@ -3639,8 +3898,11 @@ class TorchTests(unittest.TestCase):
             summed = hvd.reducescatter(tensor, op=hvd.Sum, prescale_factor=factor)
 
             factor = torch.tensor(factor, dtype=torch.float64)
-            factor = factor.cuda(hvd.local_rank()) if dtype.is_cuda else factor
-            if dtype.is_cuda and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            if dtype.is_cuda:
+                factor = factor.cuda(hvd.local_rank())
+            elif dtype.is_xpu:
+                factor = factor.xpu('xpu:{}'.format(hvd.local_rank()))
+            if (dtype.is_cuda or dtype.is_xpu) and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
               # For integer types, scaling done in FP64
               factor = factor.type(torch.float64 if dtype in int_types else dtype)
               tensor = tensor.type(torch.float64 if dtype in int_types else dtype)
@@ -3684,13 +3946,21 @@ class TorchTests(unittest.TestCase):
         dtypes = self.filter_supported_types([torch.IntTensor, torch.LongTensor,
                                               torch.FloatTensor, torch.DoubleTensor,
                                               torch.HalfTensor])
+        int_types = [torch.IntTensor, torch.LongTensor]
+        half_types = [torch.HalfTensor]
+        
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        int_types = [torch.IntTensor, torch.LongTensor,
-                     torch.cuda.IntTensor, torch.cuda.LongTensor]
-        half_types = [torch.HalfTensor, torch.cuda.HalfTensor]
+            int_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
+            half_types += [torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            int_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
+            half_types += [torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         np.random.seed(12345)
         for dtype, dim in itertools.product(dtypes, dims):
@@ -3701,8 +3971,11 @@ class TorchTests(unittest.TestCase):
             summed = hvd.reducescatter(tensor, op=hvd.Sum, postscale_factor=factor)
 
             factor = torch.tensor(factor, dtype=torch.float64)
-            factor = factor.cuda(hvd.local_rank()) if dtype.is_cuda else factor
-            if dtype.is_cuda and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            if dtype.is_cuda:
+                factor = factor.cuda(hvd.local_rank())
+            elif dtype.is_xpu:
+                factor = factor.xpu('xpu:{}'.format(hvd.local_rank()))
+            if (dtype.is_cuda or dtype.is_xpu) and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
               # For integer types, scaling done in FP64
               factor = factor.type(torch.float64 if dtype in int_types else dtype)
               tensor = tensor.type(torch.float64 if dtype in int_types else dtype)
@@ -3760,6 +4033,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -3790,6 +4067,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         tests = []
         is_hvd_poll_false_once = False
@@ -3816,6 +4097,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -3941,6 +4224,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor, torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -3972,6 +4257,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor, torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4018,6 +4305,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4036,6 +4327,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if this_set.size() <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                                  torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif this_set.size() < 10:
                 threshold = 1e-4
@@ -4075,6 +4368,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor, torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4118,6 +4413,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4132,6 +4431,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -4159,6 +4460,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4173,6 +4478,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -4196,13 +4503,21 @@ class TorchTests(unittest.TestCase):
         dtypes = self.filter_supported_types([torch.IntTensor, torch.LongTensor,
                                               torch.FloatTensor, torch.DoubleTensor,
                                               torch.HalfTensor])
+        int_types = [torch.IntTensor, torch.LongTensor]
+        half_types = [torch.HalfTensor]
+        
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        int_types = [torch.IntTensor, torch.LongTensor,
-                     torch.cuda.IntTensor, torch.cuda.LongTensor]
-        half_types = [torch.HalfTensor, torch.cuda.HalfTensor]
+            int_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
+            half_types += [torch.cuda.HalfTensor]
+        if self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            int_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
+            half_types += [torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         np.random.seed(12345)
         for dtype, dim in itertools.product(dtypes, dims):
@@ -4213,8 +4528,11 @@ class TorchTests(unittest.TestCase):
             summed_list = hvd.grouped_reducescatter(tensors, op=hvd.Sum, prescale_factor=factor)
 
             factor = torch.tensor(factor, dtype=torch.float64)
-            factor = factor.cuda(hvd.local_rank()) if dtype.is_cuda else factor
-            if dtype.is_cuda and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            if dtype.is_cuda:
+                factor = factor.cuda(hvd.local_rank())
+            elif dtype.is_xpu:
+                factor = factor.xpu('xpu:{}'.format(hvd.local_rank()))
+            if (dtype.is_cuda or dtype.is_xpu) and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
               # For integer types, scaling done in FP64
               factor = factor.type(torch.float64 if dtype in int_types else dtype)
               tensors = [tensor.type(torch.float64 if dtype in int_types else dtype) for tensor in tensors]
@@ -4258,13 +4576,21 @@ class TorchTests(unittest.TestCase):
         dtypes = self.filter_supported_types([torch.IntTensor, torch.LongTensor,
                                               torch.FloatTensor, torch.DoubleTensor,
                                               torch.HalfTensor])
+        int_types = [torch.IntTensor, torch.LongTensor]
+        half_types = [torch.HalfTensor]
+        
         if torch.cuda.is_available():
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        int_types = [torch.IntTensor, torch.LongTensor,
-                     torch.cuda.IntTensor, torch.cuda.LongTensor]
-        half_types = [torch.HalfTensor, torch.cuda.HalfTensor]
+            int_types += [torch.cuda.IntTensor, torch.LongTensor]
+            half_types += [torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
+            int_types += [torch.xpu.IntTensor, torch.LongTensor]
+            half_types += [torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         np.random.seed(12345)
         for dtype, dim in itertools.product(dtypes, dims):
@@ -4344,6 +4670,10 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
+                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
+                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4364,6 +4694,8 @@ class TorchTests(unittest.TestCase):
             # ranks, since we're comparing against precise multiplication.
             if size <= 3 or dtype in [torch.IntTensor, torch.LongTensor,
                                       torch.cuda.IntTensor, torch.cuda.LongTensor]:
+                threshold = 0
+            elif dtype.is_xpu and dtype in [torch.xpu.IntTensor, torch.xpu.LongTensor]:
                 threshold = 0
             elif size < 10:
                 threshold = 1e-4
@@ -4390,6 +4722,8 @@ class TorchTests(unittest.TestCase):
         dtypes = [torch.FloatTensor, torch.DoubleTensor, torch.HalfTensor]
         if torch.cuda.is_available():
             dtypes += [torch.cuda.FloatTensor, torch.cuda.DoubleTensor, torch.cuda.HalfTensor]
+        elif self.is_xpu_available():
+            dtypes += [torch.xpu.FloatTensor, torch.xpu.DoubleTensor, torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
