@@ -141,7 +141,7 @@ def train(epoch):
                 data, target = data.cuda(), target.cuda()
             if args.xpu:
                 data, target = data.to(device), target.to(device)
-            optimizer.zero_grad(set_to_none=True)  # zero the gradient buffers
+            optimizer.zero_grad()  # zero the gradient buffers
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
                 data_batch = data[i:i + args.batch_size]
