@@ -40,14 +40,14 @@ static PFN_cuCtxGetDevice pfn_cuCtxGetDevice = nullptr;
 
 static void initialize_driver_api() {
   // Clear previous errors
-  (void) dlerror();
+  (void)dlerror();
 
   cudalib = dlopen("libcuda.so", RTLD_LAZY);
   if (!cudalib) {
     throw std::logic_error("Internal error. Could not dlopen libcuda.so.");
   }
 
-  pfn_cuCtxGetDevice = (PFN_cuCtxGetDevice) dlsym(cudalib, "cuCtxGetDevice");
+  pfn_cuCtxGetDevice = (PFN_cuCtxGetDevice)dlsym(cudalib, "cuCtxGetDevice");
   if (!pfn_cuCtxGetDevice) {
     throw std::logic_error("Internal error. Could not load cuCtxGetDevice.");
   }
@@ -59,21 +59,25 @@ with_device::with_device(dev_index_t device) {
     restore_device_ = CPU_DEVICE_ID;
   } else {
 #if HAVE_GPU
+#if HAVE_CUDA || HAVE_ROCM
 #if HAVE_CUDA
-    if (!cudalib) initialize_driver_api();
+    if (!cudalib)
+      initialize_driver_api();
     CUdevice cudev;
     auto err = pfn_cuCtxGetDevice(&cudev);
     if (err == CUDA_ERROR_NOT_INITIALIZED ||
         err == CUDA_ERROR_INVALID_CONTEXT) {
-       // If device has never been set on this thread,
-       // restore to supplied device.
-       restore_device_ = device;
-     } else if (err == CUDA_SUCCESS) {
-       restore_device_ = static_cast<int>(cudev);
-     } else {
-       throw std::logic_error("Internal error. cuCtxGetDevice returned error code " +
-                              std::to_string(err));
-     }
+      // If device has never been set on this thread,
+      // restore to supplied device.
+      restore_device_ = device;
+    } else if (err == CUDA_SUCCESS) {
+      restore_device_ = static_cast<int>(cudev);
+    } else {
+      throw std::logic_error(
+          "Internal error. cuCtxGetDevice returned error code " +
+          std::to_string(err));
+    }
+#endif
     C10_CUDA_CHECK(cudaSetDevice(device));
 #elif HAVE_SYCL
     c10::impl::VirtualGuardImpl impl(at::kXPU);

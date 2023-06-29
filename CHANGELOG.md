@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - Refined batch memory copy kernel and supported padding to align w/ public logic, and updated corresponding cases.
-- Rebased code to public v0.28.0 release.
+- Rebased code to public v0.28.1 release.
 - Aligned installation method w/ public HVD.
 - Refined BroadcastInplaceOp for TF.
 - Enabled public horovod examples of tensorflow for IOH.
@@ -62,6 +62,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Added oneCCL GPU support for Broadcast and Allreduce operations.
 - Added GPU Bfloat16 compression based on DPCPP compiler, verified on Intel® Data Center GPU Max Series.
+
+## [v0.28.1] - 2023-06-12
+
+### Fixed
+
+- Fixed build with gcc 12. ([#3925](https://github.com/horovod/horovod/pull/3925))
+- PyTorch: Fixed build on ROCm. ([#3928](https://github.com/horovod/horovod/pull/3928))
+- TensorFlow: Fixed local_rank_op. ([#3940](https://github.com/horovod/horovod/pull/3940))
+
 
 ## [v0.28.0] - 2023-05-10
 
