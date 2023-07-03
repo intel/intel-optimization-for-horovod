@@ -3936,6 +3936,45 @@ class TensorFlowTests(BaseTensorFlowTests):
             err = np.linalg.norm(expected - actual)
             self.assertLess(err, 0.00000001)
 
+    def test_compression_bf16(self):
+        if not hvd.sycl_built():
+            self.skipTest("BF16Compression only supports sycl.")
+        
+        valid_dtypes = [tf.bfloat16, tf.float32, tf.float64]
+        invalid_dtypes = [tf.uint8, tf.int8, tf.uint16, tf.int16,
+                          tf.int32, tf.int64, tf.bool]
+
+        tensor_size = [17] * 3
+        compression = hvd.Compression.bf16
+
+        for dtype in valid_dtypes:
+            tensor = tf.ones(tensor_size, dtype=dtype)
+
+            tensor_compressed, ctx = compression.compress(tensor)
+            self.assertEqual(tensor_compressed.dtype, tf.bfloat16)
+
+            tensor_decompressed = compression.decompress(tensor_compressed, ctx)
+            self.assertEqual(tensor_decompressed.dtype, dtype)
+
+            actual = self.evaluate(tensor_decompressed)
+            expected = np.ones(tensor_size)
+            err = np.linalg.norm(expected - actual)
+            self.assertLess(err, 0.00000001)
+
+        for dtype in invalid_dtypes:
+            tensor = tf.ones(tensor_size, dtype=dtype)
+
+            tensor_compressed, ctx = compression.compress(tensor)
+            self.assertEqual(tensor_compressed.dtype, dtype)
+
+            tensor_decompressed = compression.decompress(tensor_compressed, ctx)
+            self.assertEqual(tensor_decompressed.dtype, dtype)
+
+            actual = self.evaluate(tensor_decompressed)
+            expected = np.ones(tensor_size)
+            err = np.linalg.norm(expected - actual)
+            self.assertLess(err, 0.00000001)
+
     def test_broadcast_object(self):
         hvd.init()
 
