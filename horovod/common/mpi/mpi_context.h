@@ -98,7 +98,6 @@ struct MPIContext {
   MPI_Op mpi_float16_max;
   MPI_Op mpi_float16_prod;
 
-  // TODO(IOH): support sum/min/max/prod?
   // MPI custom data type for bfloat16.
   MPI_Datatype mpi_bfloat16_t;
 

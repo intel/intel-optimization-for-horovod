@@ -89,7 +89,6 @@ struct HorovodGlobalState {
   // Number of responses that can be cached (RepsonseCache lives in ProcessSet)
   uint32_t cache_capacity = 1024;
 
-  // TODO(Maozhou): rename to num_gpu_streams & current_gpu_stream?
   // Number of GPU streams to use
   int num_nccl_streams = 1;
 

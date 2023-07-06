@@ -256,7 +256,6 @@ gpuEvent_t TFReadyEvent::event() const {
 
 #if HAVE_SYCL
 TFReadyEvent::TFReadyEvent(OpKernelContext* context) {
-  // TODO(Maozhou): reuse SYCL event object?
   ctx_ = new TFOpContext(context);
   auto stream = ctx_->SYCLQueue();
   event_ = stream.ext_oneapi_submit_barrier();

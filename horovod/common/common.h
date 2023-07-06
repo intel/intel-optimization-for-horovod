@@ -69,13 +69,7 @@ using gpuPointerAttribute_t = hipPointerAttribute_t;
     }                                                                                     \
   } while (0)
 #elif HAVE_SYCL
-#if __has_include(<sycl/sycl.hpp>)
 #include <sycl/sycl.hpp>
-#elif __has_include(<CL/sycl.hpp>)
-#include <CL/sycl.hpp>
-#else
-#error "Unsupported compiler"
-#endif
 using gpuEvent_t = sycl::event;
 using gpuStream_t = std::shared_ptr<sycl::queue>;
 using gpuError_t = sycl::errc;

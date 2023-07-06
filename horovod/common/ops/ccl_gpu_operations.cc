@@ -261,8 +261,6 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   LOG(DEBUG) << "Do CCLGPUAllreduce, number of elements: " << num_elements
              << ", dtype: " << DataType_Name(first_entry.tensor->dtype());
 
-  // TODO(Maozhou): we assume oneCCL honors SYCL in-order queue semantics, and
-  // can use the sycl::event from ccl::event.get_native() when oneCCL is ready
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
     ccl::allreduce(
         fused_input_data, buffer_data, (size_t)num_elements,
@@ -743,7 +741,6 @@ Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
     }
   } else {
     // Simulate "ReduceScatterV" by an equivalent group of reduces.
-    // TODO(Pengfei): Assume oneCCL executes events in-order.
     LOG(DEBUG)
         << "Simulate 'ReduceScatterV' by an equivalent group of reduces.";
     size_t offset_bytes = 0;

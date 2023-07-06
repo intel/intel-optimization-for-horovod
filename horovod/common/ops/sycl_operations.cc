@@ -65,7 +65,7 @@ public:
                    std::string name, gpuStream_t& stream) {
     Event event;
     GetGpuEvent(&event, stream);
-    // TODO(Maozhou): ext_oneapi_submit_barrier is DPCPP only
+    // `ext_oneapi_submit_barrier` is supported by intel DPC++ only
     *(event.event) = stream->ext_oneapi_submit_barrier();
     event_queue.emplace(name, event);
   }
@@ -172,7 +172,6 @@ public:
   }
 
 private:
-  // TODO(Maozhou): reuse SYCL event object?
   std::unordered_map<sycl::queue, std::queue<Event>> sycl_events;
   std::mutex sycl_events_mutex;
 };

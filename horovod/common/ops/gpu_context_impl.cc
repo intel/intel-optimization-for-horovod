@@ -48,7 +48,6 @@ void GPUContext::ClearEvents(
                      elastic);
 }
 
-// TODO(Maozhou): move out of gpu_context_impl?
 #if HAVE_SYCL
 void GPUContext::StreamCreate(const TensorTableEntry& e, gpuStream_t& stream) {
   pimpl->StreamCreate(e, stream);

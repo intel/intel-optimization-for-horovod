@@ -76,14 +76,6 @@ $ source /path/to/intel/oneapi/ccl/latest/env/vars.sh
 ```
 
 
-
-#### Build and install released version from pip channel
-
-```bash
-$ CC=icx CXX=icpx \
-pip install --no-cache-dir intel-optimization-for-horovod
-```
-
 #### Build from source
 
 If you want to change code locally and build from source:

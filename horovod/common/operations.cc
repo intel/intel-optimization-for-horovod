@@ -490,7 +490,7 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
 #if HAVE_GPU
   // Set number of GPU streams to use
 #if HAVE_SYCL
-  // TODO(Maozhou): always set `num_nccl_streams` to 1 for oneCCL
+  // always set `num_nccl_streams` to 1 for oneCCL
   state.num_nccl_streams = 1;
 #else
   auto horovod_num_nccl_streams = std::getenv(HOROVOD_NUM_NCCL_STREAMS);

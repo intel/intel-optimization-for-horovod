@@ -16,44 +16,44 @@
 #ifndef INPLACE_BROADCAST_SYCL_HELPER
 #define INPLACE_BROADCAST_SYCL_HELPER
 
+#include "tensorflow/c/experimental/stream_executor/stream_executor.h"
 #include "tensorflow/c/kernels.h"
 #include "tensorflow/c/tf_status.h"
-#include "tensorflow/c/experimental/stream_executor/stream_executor.h"
 
 namespace tensorflow {
 
-struct XPUDevice{
+struct XPUDevice {
   sycl::queue GetSYCLQueue() const {
     TF_Status* s = TF_NewStatus();
-    auto sp_stream = TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(ctx_), s);
+    auto sp_stream =
+        TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(ctx_), s);
     if (TF_GetCode(s) == TF_OK) {
       TF_DeleteStatus(s);
       return *(reinterpret_cast<SP_Stream_st*>(sp_stream)->stream_handle);
     } else {
       std::string err_msg = TF_Message(s);
       TF_DeleteStatus(s);
-      throw std::runtime_error("Failed to get stream, error message: " + err_msg);
+      throw std::runtime_error("Failed to get stream, error message: " +
+                               err_msg);
     }
-  } 
+  }
 
   OpKernelContext* ctx_ = nullptr;
 };
 
-template <>
-const XPUDevice& OpKernelContext::eigen_device() const {
+template <> const XPUDevice& OpKernelContext::eigen_device() const {
   static XPUDevice global_xpu_device;
   global_xpu_device.ctx_ = const_cast<OpKernelContext*>(this);
   return global_xpu_device;
 }
 
 namespace functor {
-template <typename T>
-struct DenseUpdate<XPUDevice, T, ASSIGN> {
+template <typename T> struct DenseUpdate<XPUDevice, T, ASSIGN> {
   void operator()(const XPUDevice& d, typename TTypes<T>::Flat params,
                   typename TTypes<T>::ConstFlat update) {
     if (params.size() != 0) {
-        sycl::queue q = d.GetSYCLQueue();
-        q.memcpy(params.data(), update.data(), params.size() * sizeof(T));
+      sycl::queue q = d.GetSYCLQueue();
+      q.memcpy(params.data(), update.data(), params.size() * sizeof(T));
     }
   }
 };
