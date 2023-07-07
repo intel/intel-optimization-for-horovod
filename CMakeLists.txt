@@ -210,7 +210,7 @@ macro(ADD_DPCPP)
     find_package(IntelSYCL REQUIRED)
     if (IntelSYCL_FOUND)
         add_definitions(-DHAVE_SYCL=1 -DHAVE_DPCPP=1)
-        set(USE_SYCL TRUE)
+        set(HAVE_SYCL TRUE)
         set(USE_DPCPP TRUE)
     endif ()
     if (NOT USE_CCL)
@@ -222,10 +222,6 @@ macro(ADD_DPCPP)
     set(USE_GPU_CCL TRUE)
     list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl_operations.cc"
                         "${PROJECT_SOURCE_DIR}/horovod/common/ops/gpu_operations.cc")
-    # TODO(IOH): move SYCL common files from DPCPP path
-    if (USE_SYCL)
-        list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/sycl/sycl_kernels.cc")
-    endif ()
 endmacro()
 
 if(DEFINED HOROVOD_GPU_ALLREDUCE OR DEFINED HOROVOD_GPU_ALLGATHER OR DEFINED HOROVOD_GPU_BROADCAST OR DEFINED HOROVOD_GPU_ALLTOALL OR DEFINED HOROVOD_GPU_REDUCESCATTER)
@@ -400,6 +396,10 @@ endif()
 
 if(HAVE_ROCM)
     add_subdirectory(horovod/common/ops/rocm)
+endif()
+
+if (HAVE_SYCL)
+    add_subdirectory(horovod/common/ops/sycl)
 endif()
 
 # if we need compatible c++ abi
