@@ -124,6 +124,9 @@ void CCLGPUOpContext::InitCCLComm(const gpuStream_t& stream,
     process_set.controller->Barrier(Communicator::GLOBAL);
     timeline.ActivityEndAll(entries);
   }
+
+  ccl4hvd_ = &ccl_context_->ccl_comms[global_state_->current_nccl_stream].
+                              at(std::make_tuple(process_set_id, ccl_device_map));
 }
 
 // helpers
@@ -147,22 +150,6 @@ void CCLGPUOpContext::PopulateCCLCommStrategy(int& ccl_rank, int& ccl_size,
 bool CCLGPUOpContext::IsEnabled(
     const std::vector<TensorTableEntry>& entries) const {
   return entries[0].device != CPU_DEVICE_ID;
-}
-
-ccl::communicator&
-CCLGPUOpContext::GetCCLComm(const TensorTableEntry& entry,
-                            const std::vector<int32_t>& devices) {
-  return ccl_context_->ccl_comms[global_state_->current_nccl_stream]
-      .at(std::make_tuple(entry.process_set_id, devices))
-      .ccl_comm_;
-}
-
-ccl::stream&
-CCLGPUOpContext::GetCCLStream(const TensorTableEntry& entry,
-                              const std::vector<int32_t>& devices) {
-  return ccl_context_->ccl_comms[global_state_->current_nccl_stream]
-      .at(std::make_tuple(entry.process_set_id, devices))
-      .ccl_stream_;
 }
 
 // Allreduce
@@ -265,8 +252,8 @@ Status CCLGPUAllreduce::Execute(std::vector<TensorTableEntry>& entries,
     ccl::allreduce(
         fused_input_data, buffer_data, (size_t)num_elements,
         GetCCLDataType(first_entry.tensor), ccl_reduction_op,
-        ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr)
+        ccl_op_context_.ccl4hvd_->ccl_comm_, 
+        ccl_op_context_.ccl4hvd_->ccl_stream_, attr)
         .wait();
   });
 
@@ -354,8 +341,8 @@ Status CCLGPUBroadcast::Execute(std::vector<TensorTableEntry>& entries,
         /* size */ first_entry.tensor->shape().num_elements() *
             DataType_Size(first_entry.tensor->dtype()),
         ccl::datatype::int8, first_entry.root_rank,
-        ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()), attr)
+        ccl_op_context_.ccl4hvd_->ccl_comm_, 
+        ccl_op_context_.ccl4hvd_->ccl_stream_, attr)
         .wait();
   });
 
@@ -493,8 +480,8 @@ Status CCLGPUAllgather::Execute(std::vector<TensorTableEntry>& entries,
     ccl::allgatherv(
         fused_input_data, rcounts[global_rank], buffer_data, rcounts,
         ccl::datatype::int8,
-        ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-        ccl_op_context_.GetCCLStream(first_entry, response.devices()))
+        ccl_op_context_.ccl4hvd_->ccl_comm_, 
+        ccl_op_context_.ccl4hvd_->ccl_stream_)
         .wait();
   });
 
@@ -638,9 +625,9 @@ Status CCLGPUAlltoall::Execute(std::vector<TensorTableEntry>& entries,
   CCLGPUContext::CallWithLock(CCLGPUContext::GlobalMutex, [&]() {
     ccl::alltoallv(sendbuf, sendcounts, buffer_data, recvcounts,
                    GetCCLDataType(e.tensor),
-                   ccl_op_context_.GetCCLComm(e, response.devices()),
-                   ccl_op_context_.GetCCLStream(e, response.devices()))
-        .wait();
+                   ccl_op_context_.ccl4hvd_->ccl_comm_, 
+                   ccl_op_context_.ccl4hvd_->ccl_stream_)
+                   .wait();
   });
 
   if (global_state_->timeline.Initialized()) {
@@ -730,8 +717,8 @@ Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
       ccl::reduce_scatter(
           fused_input_data, buffer_data, recvcounts[0],
           GetCCLDataType(first_entry.tensor), ccl::reduction::sum,
-          ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-          ccl_op_context_.GetCCLStream(first_entry, response.devices()))
+          ccl_op_context_.ccl4hvd_->ccl_comm_, 
+          ccl_op_context_.ccl4hvd_->ccl_stream_)
           .wait();
     });
 
@@ -754,8 +741,8 @@ Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
         ccl::reduce(
             send_pointer, buffer_data, recvcounts[recv_rank],
             GetCCLDataType(first_entry.tensor), ccl::reduction::sum, recv_rank,
-            ccl_op_context_.GetCCLComm(first_entry, response.devices()),
-            ccl_op_context_.GetCCLStream(first_entry, response.devices()))
+            ccl_op_context_.ccl4hvd_->ccl_comm_, 
+            ccl_op_context_.ccl4hvd_->ccl_stream_)
             .wait();
       });
 
