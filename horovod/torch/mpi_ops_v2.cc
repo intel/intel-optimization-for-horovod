@@ -109,6 +109,7 @@ int DoAllreduce(::torch::Tensor tensor, ::torch::Tensor output, int divisor,
         auto hvd_event = status.event;
         if (hvd_event.event) {
 #if HAVE_SYCL
+          // `ext_oneapi_submit_barrier` is supported by intel DPC++ only
           hvd_context->SYCLQueue().ext_oneapi_submit_barrier(
               {*(hvd_event.event)});
 #else

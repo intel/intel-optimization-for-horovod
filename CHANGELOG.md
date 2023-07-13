@@ -17,7 +17,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Aligned installation method w/ public HVD.
 - Refined BroadcastInplaceOp for TF.
 - Enabled public horovod examples of tensorflow for IOH.
-- Handled datatype bfloat16 for DPCPP only.
 - Skipped accuracy check for bf16/fp16 on ranks > 2 temporarily because not sure how to change threshold when rank increase.
 
 ### Deprecated

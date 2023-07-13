@@ -258,6 +258,7 @@ gpuEvent_t TFReadyEvent::event() const {
 TFReadyEvent::TFReadyEvent(OpKernelContext* context) {
   ctx_ = new TFOpContext(context);
   auto stream = ctx_->SYCLQueue();
+  // `ext_oneapi_submit_barrier` is supported by intel DPC++ only
   event_ = stream.ext_oneapi_submit_barrier();
 }
 bool TFReadyEvent::Ready() const {

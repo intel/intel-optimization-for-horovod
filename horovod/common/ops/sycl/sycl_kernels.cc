@@ -217,13 +217,12 @@ void BatchedScaledD2DMemcpySYCLImpl(BatchedD2DParams& params, int num_copies,
     BatchedScaledD2DMemcpy<sycl::half, sycl::half>(
         params, num_copies, (sycl::half)float_scale_factor, stream);
     break;
-#if HAVE_DPCPP
+  // `sycl::ext::oneapi::bfloat16` is supported by intel DPC++ only
   case HOROVOD_BFLOAT16:
     using bfloat16 = sycl::ext::oneapi::bfloat16;
     BatchedScaledD2DMemcpy<bfloat16, bfloat16>(
         params, num_copies, (bfloat16)float_scale_factor, stream);
     break;
-#endif // HAVE_DPCPP
   case HOROVOD_FLOAT32:
     BatchedScaledD2DMemcpy<float, float>(params, num_copies, float_scale_factor,
                                          stream);
@@ -286,14 +285,13 @@ void ScaleBufferSYCLImpl(const void* fused_input_data, void* buffer_data,
                           (sycl::half*)buffer_data, num_elements,
                           (sycl::half)float_scale_factor, stream);
     break;
+  // `sycl::ext::oneapi::bfloat16` is supported by intel DPC++ only
   case HOROVOD_BFLOAT16:
-#if HAVE_DPCPP
     using bfloat16 = sycl::ext::oneapi::bfloat16;
     ScaleBufferSYCLKernel((const bfloat16*)fused_input_data,
                           (bfloat16*)buffer_data, num_elements,
                           (bfloat16)float_scale_factor, stream);
     break;
-#endif // HAVE_DPCPP
   case HOROVOD_FLOAT32:
     ScaleBufferSYCLKernel((const float*)fused_input_data, (float*)buffer_data,
                           num_elements, float_scale_factor, stream);

@@ -72,6 +72,7 @@ TorchReadyEvent::~TorchReadyEvent() {
 TorchReadyEvent::TorchReadyEvent(int device) : device_(device) {
   ctx_ = new TorchOpContext(device_);
   auto stream = ctx_->SYCLQueue();
+  // `ext_oneapi_submit_barrier` is supported by intel DPC++ only
   event_ = stream.ext_oneapi_submit_barrier();
 }
 
