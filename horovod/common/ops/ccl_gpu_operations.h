@@ -48,12 +48,6 @@ public:
   void Initialize(HorovodGlobalState& state);
   void Finalize();
 
-  template <typename ccl_fn_type>
-  static decltype(auto) CallWithLock(std::mutex& lock, ccl_fn_type fn) {
-    std::unique_lock<std::mutex> GlobalMutex(lock);
-    return fn();
-  }
-
   // base primitives
   std::vector<
       std::unordered_map<std::tuple<int32_t, std::vector<int32_t>>, ccl4hvd>>
@@ -62,8 +56,6 @@ public:
   // ccl helpers knobs
   // TODO(Maozhou): move to global_state when unified with CCL CPU?
   bool enable_cache;
-
-  static std::mutex GlobalMutex;
 };
 
 class CCLGPUOpContext {
