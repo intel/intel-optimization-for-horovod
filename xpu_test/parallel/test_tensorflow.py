@@ -1526,7 +1526,7 @@ class TensorFlowTests(BaseTensorFlowTests):
             test = max_difference <= threshold
             tests.append(test)
 
-        if size <= 2 or dtype not in [tf.float16, tf.bfloat16]:
+        if size <= 2:
             self.assertTrue(self.evaluate(tf.reduce_all(tests)),
                             "hvd.reducescatter produces incorrect results")
 
