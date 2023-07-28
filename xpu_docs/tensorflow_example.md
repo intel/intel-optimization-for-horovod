@@ -38,13 +38,7 @@ To use Intel® Optimization for Horovod with Intel extension for TensorFlow*, yo
    mpirun -np 2 python tensorflow2_keras_mnist.py
    ```
 
-The following examples are borrowed from public horovod example. We have made necessary changes to pin Intel GPU at the beginning, just as said above. In **xpu_examples/tensorflow2/** folder:
-  1. tensorflow2_keras_mnist.py
-  2. tensorflow2_keras_synthetic_benchmark.py
-  3. tensorflow2_mnist.py
-  4. tensorflow2_synthetic_benchmark.py
-
-You could run examples directly with the following command:
+We modified public examples of tensorflow at folder **examples/tensorflow2/**, which could pin Intel GPU on specific platform. You could run examples directly with the following command:
 
 ```bash
 mpirun -np 2 -l python tensorflow2_keras_mnist.py
