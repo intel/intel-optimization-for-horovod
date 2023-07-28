@@ -20,9 +20,9 @@ Need to install components of Intel® oneAPI Base Toolkit:
 - Intel® oneAPI MPI Library (IntelMPI)
 
 ```bash
-$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/7deeaac4-f605-4bcf-a81b-ea7531577c61/l_BaseKit_p_2023.1.0.46401_offline.sh
+$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/992857b9-624c-45de-9701-f6445d845359/l_BaseKit_p_2023.2.0.49397_offline.sh
 # 3 components are necessary: DPC++/C++ Compiler with DPC++ Libiary, oneMKL and oneCCL(IntelMPI will be installed automatically as oneCCL's dependency).
-$ sudo sh ./l_BaseKit_p_2023.1.0.46401_offline.sh
+$ sudo sh ./l_BaseKit_p_2023.2.0.49397_offline.sh
 ```
 
 For any more details, please follow the procedure in https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html.
@@ -41,12 +41,11 @@ source /path to basekit/intel/oneapi/ccl/latest/env/vars.sh
 
 ## Build
 
-Intel® Optimization for Horovod* depends on TensorFlow* or/and Pytorch* to build from source.
+Intel® Optimization for Horovod* depends on TensorFlow* to build from source.
 
 ```bash
-$ pip install tensorflow==2.12.0
+$ pip install tensorflow==2.13.0
 
-$ pip install torch==1.13.0a0+git6c9b55e -f https://developer.intel.com/ipex-whl-stable-xpu
 ```
 
 
@@ -102,22 +101,16 @@ $ pip install dist/intel-optimization-for-horovod-*.whl
 
 ## Runtime
 
-Intel® Optimization for Horovod* depends on Intel® Extension for Tensorflow* or Intel® Extension for Pytorch* at runtime to run on intel GPU.
+Intel® Optimization for Horovod* depends on Intel® Extension for Tensorflow* at runtime to run on intel GPU.
 
 
 
 - To run TensorFlow* applications
 
 ```bash
-$ pip install --upgrade intel-extension-for-tensorflow[gpu]
+$ pip install --upgrade intel-extension-for-tensorflow[xpu]
 ```
 
-
-
-- To run Pytorch* applications.
-```
-$ python -m pip install intel_extension_for_pytorch==1.13.120+xpu -f https://developer.intel.com/ipex-whl-stable-xpu
-```
 
 You can then follow the steps in [Contributing guide](../CONTRIBUTING.md) to run some tests to confirm it works as expected.
 
