@@ -602,12 +602,6 @@ Status CCLGPUAlltoall::Execute(std::vector<TensorTableEntry>& entries,
   const void* sendbuf = e.tensor->data();
   void* buffer_data = (void*)e.output->data();
 
-  // TODO(Pengfei): support empty sendbuf
-  if (sendbuf == nullptr) {
-    throw std::logic_error(
-        "CCLGPUAlltoall with empty entry not implemented yet.");
-  }
-
   // Do alltoall
   LOG(DEBUG) << "Do CCLGPUAlltoall";
   ccl::alltoallv(sendbuf, sendcounts, buffer_data, recvcounts,

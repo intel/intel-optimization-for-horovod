@@ -3284,9 +3284,6 @@ class TensorFlowTests(BaseTensorFlowTests):
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
         
-        if hvd.sycl_built():
-            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
-
         hvd.init()
         local_rank = hvd.local_rank()
         size = hvd.size()
@@ -3365,9 +3362,6 @@ class TensorFlowTests(BaseTensorFlowTests):
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
         
-        if hvd.sycl_built():
-            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
-
         hvd.init()
         local_rank = hvd.local_rank()
         size = hvd.size()
@@ -3471,9 +3465,6 @@ class TensorFlowTests(BaseTensorFlowTests):
         # This test does not apply if NCCL version < 2.7.0
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
-
-        if hvd.sycl_built():
-            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
 
         hvd.init()
         size = hvd.size()
@@ -3579,9 +3570,6 @@ class TensorFlowTests(BaseTensorFlowTests):
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
         
-        if hvd.sycl_built():
-            self.skipTest("OneCCL GPU doest not support empty input or output for alltoall.")
-
         active_ranks = range(0, hvd.size() // 2)
         silent_ranks = range(hvd.size() // 2, hvd.size())
 
