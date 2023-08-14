@@ -33,6 +33,10 @@ parser.add_argument('--use-adasum', action='store_true', default=False,
                     help='use adasum algorithm to do reduction')
 parser.add_argument('--gradient-predivide-factor', type=float, default=1.0,
                     help='apply gradient predivide factor in optimizer (default: 1.0)')
+parser.add_argument('--workers', type=int, default=4,
+                    help='number of data loading workers (default: 4)')
+parser.add_argument('--groups', type=int, default=0,
+                    help='horovod num_groups for group fusion(default: 0)')
 
 # Default settings from https://arxiv.org/abs/1706.02677.
 parser.add_argument('--batch-size', type=int, default=32,
@@ -52,8 +56,12 @@ parser.add_argument('--wd', type=float, default=0.00005,
 
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
+parser.add_argument('--xpu', action='store_true', default=False,
+                    help='use Intel GPU for training')
 parser.add_argument('--seed', type=int, default=42,
                     help='random seed')
+parser.add_argument('--synthetic', action='store_true', default=False,
+                    help='Use synthetic data')
 
 
 def train(epoch):
@@ -70,6 +78,8 @@ def train(epoch):
 
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
+            if args.xpu:
+                data, target = data.xpu(), target.xpu()
             optimizer.zero_grad()
             # Split data into sub-batches of size batch_size
             for i in range(0, len(data), args.batch_size):
@@ -105,6 +115,8 @@ def validate(epoch):
             for data, target in val_loader:
                 if args.cuda:
                     data, target = data.cuda(), target.cuda()
+                if args.xpu:
+                    data, target = data.xpu(), target.xpu()
                 output = model(data)
 
                 val_loss.update(F.cross_entropy(output, target))
@@ -172,19 +184,31 @@ class Metric(object):
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
+    args.cuda = not args.no_cuda and torch.cuda.is_available() and not args.xpu
 
     allreduce_batch_size = args.batch_size * args.batches_per_allreduce
 
     hvd.init()
+    # Horovod: print logs on the first worker.
+    verbose = 1 if hvd.rank() == 0 else 0
+
     torch.manual_seed(args.seed)
 
     if args.cuda:
         # Horovod: pin GPU to local rank.
         torch.cuda.set_device(hvd.local_rank())
         torch.cuda.manual_seed(args.seed)
+        cudnn.benchmark = True
 
-    cudnn.benchmark = True
+    if args.xpu:
+        try:
+            # intel extension for pytorch is needed for XPU 
+            import intel_extension_for_pytorch
+            torch.xpu.set_device(hvd.local_rank())
+            torch.xpu.manual_seed(args.seed)
+        except:
+            if verbose: print("unable to load intel_extension_for_pytorch package")
+            args.xpu = False
 
     # If set > 0, will resume training from a given checkpoint.
     resume_from_epoch = 0
@@ -198,31 +222,44 @@ if __name__ == '__main__':
     resume_from_epoch = hvd.broadcast(torch.tensor(resume_from_epoch), root_rank=0,
                                       name='resume_from_epoch').item()
 
-    # Horovod: print logs on the first worker.
-    verbose = 1 if hvd.rank() == 0 else 0
-
     # Horovod: write TensorBoard logs on first worker.
     log_writer = SummaryWriter(args.log_dir) if hvd.rank() == 0 else None
 
     # Horovod: limit # of CPU threads to be used per worker.
     torch.set_num_threads(4)
 
-    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': args.workers, 'pin_memory': True} if args.cuda or args.xpu else {}
     # When supported, use 'forkserver' to spawn dataloader workers instead of 'fork' to prevent
     # issues with Infiniband implementations that are not fork-safe
     if (kwargs.get('num_workers', 0) > 0 and hasattr(mp, '_supports_context') and
             mp._supports_context and 'forkserver' in mp.get_all_start_methods()):
         kwargs['multiprocessing_context'] = 'forkserver'
 
-    train_dataset = \
-        datasets.ImageFolder(args.train_dir,
-                             transform=transforms.Compose([
-                                 transforms.RandomResizedCrop(224),
-                                 transforms.RandomHorizontalFlip(),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                      std=[0.229, 0.224, 0.225])
-                             ]))
+    if args.synthetic:
+        if verbose: print("Synthetic data is used!")
+        train_dataset = datasets.FakeData(1281167, (3, 224, 224), 1000,
+                                          transforms.ToTensor())
+        val_dataset = datasets.FakeData(50000, (3, 224, 224), 1000,
+                                        transforms.ToTensor())
+    else:
+        train_dataset = \
+            datasets.ImageFolder(args.train_dir,
+                                 transform=transforms.Compose([
+                                     transforms.RandomResizedCrop(224),
+                                     transforms.RandomHorizontalFlip(),
+                                     transforms.ToTensor(),
+                                     transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                          std=[0.229, 0.224, 0.225])
+                                 ]))
+        val_dataset = \
+            datasets.ImageFolder(args.val_dir,
+                                 transform=transforms.Compose([
+                                     transforms.Resize(256),
+                                     transforms.CenterCrop(224),
+                                     transforms.ToTensor(),
+                                     transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                          std=[0.229, 0.224, 0.225])
+                                 ]))
     # Horovod: use DistributedSampler to partition data among workers. Manually specify
     # `num_replicas=hvd.size()` and `rank=hvd.rank()`.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -231,15 +268,6 @@ if __name__ == '__main__':
         train_dataset, batch_size=allreduce_batch_size,
         sampler=train_sampler, **kwargs)
 
-    val_dataset = \
-        datasets.ImageFolder(args.val_dir,
-                             transform=transforms.Compose([
-                                 transforms.Resize(256),
-                                 transforms.CenterCrop(224),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                      std=[0.229, 0.224, 0.225])
-                             ]))
     val_sampler = torch.utils.data.distributed.DistributedSampler(
         val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size,
@@ -259,6 +287,9 @@ if __name__ == '__main__':
         # If using GPU Adasum allreduce, scale learning rate by local_size.
         if args.use_adasum and hvd.nccl_built():
             lr_scaler = args.batches_per_allreduce * hvd.local_size()
+    if args.xpu:
+        # Move model to XPU.
+        model.xpu()
 
     # Horovod: scale learning rate by the number of GPUs.
     optimizer = optim.SGD(model.parameters(),
@@ -269,13 +300,19 @@ if __name__ == '__main__':
     # Horovod: (optional) compression algorithm.
     compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
 
+    if args.xpu:
+        model, optimizer = torch.xpu.optimize(
+            model=model,
+            optimizer=optimizer,
+            level="O1")
+
     # Horovod: wrap optimizer with DistributedOptimizer.
     optimizer = hvd.DistributedOptimizer(
         optimizer, named_parameters=model.named_parameters(),
         compression=compression,
         backward_passes_per_step=args.batches_per_allreduce,
         op=hvd.Adasum if args.use_adasum else hvd.Average,
-        gradient_predivide_factor=args.gradient_predivide_factor)
+        gradient_predivide_factor=args.gradient_predivide_factor, num_groups=args.groups)
 
     # Restore from a previous checkpoint, if initial_epoch is specified.
     # Horovod: restore on the first worker which will broadcast weights to other workers.
