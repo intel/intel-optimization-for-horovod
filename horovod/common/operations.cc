@@ -144,6 +144,8 @@ DDLContext ddl_context;
 #if HAVE_CCL
 #if HAVE_GPU
 CCLGPUContext ccl_gpu_context;
+CCLGPUContext local_ccl_gpu_context;
+CCLGPUContext cross_ccl_gpu_context;
 #else
 CCLContext ccl_context;
 #endif
@@ -243,9 +245,13 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
 
 #if HAVE_CCL
 #if HAVE_GPU
-  if (HOROVOD_GPU_ALLREDUCE == 'C')
+  if (HOROVOD_GPU_ALLREDUCE == 'C') {
+    allreduce_ops.push_back(std::make_shared<CCLGPUTorusAllreduce>( 
+        &local_ccl_gpu_context, &cross_ccl_gpu_context, 
+        &gpu_context, &state));
     allreduce_ops.push_back(std::make_shared<CCLGPUAllreduce>(
         &ccl_gpu_context, &gpu_context, &state));
+  }
   if (HOROVOD_GPU_ALLGATHER == 'C')
     allgather_ops.push_back(std::make_shared<CCLGPUAllgather>(
         &ccl_gpu_context, &gpu_context, &state));
@@ -500,6 +506,12 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   }
 #endif
 
+#if HAVE_CCL && HAVE_GPU
+  ccl_gpu_context.ccl_comms.resize(state.num_nccl_streams);
+  local_ccl_gpu_context.ccl_comms.resize(state.num_nccl_streams);
+  cross_ccl_gpu_context.ccl_comms.resize(state.num_nccl_streams);
+#endif
+
 #if HAVE_NCCL
   nccl_context.nccl_comms.resize(state.num_nccl_streams);
   local_nccl_context.nccl_comms.resize(state.num_nccl_streams);
@@ -631,8 +643,8 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
                  (size != local_size);
     state.parameter_manager.SetTorusAllreduce(value, true);
   }
-#if HOROVOD_GPU_ALLREDUCE != 'N' && HOROVOD_GPU_ALLREDUCE != 'D'
-  // Torus allreduce is not supported without NCCL or DDL
+#if HOROVOD_GPU_ALLREDUCE != 'N' && HOROVOD_GPU_ALLREDUCE != 'D' && HOROVOD_GPU_ALLREDUCE != 'C'
+  // Torus allreduce is not supported without NCCL or DDL or CCL
   state.parameter_manager.SetTorusAllreduce(false, true);
 #endif
 
@@ -773,6 +785,8 @@ shutdown:
 #if HAVE_CCL
 #if HAVE_GPU
   ccl_gpu_context.Finalize();
+  cross_ccl_gpu_context.Finalize();
+  local_ccl_gpu_context.Finalize();
 #else
   if (state.cpu_operation == LibType::CCL) {
     ccl_context.Finalize();

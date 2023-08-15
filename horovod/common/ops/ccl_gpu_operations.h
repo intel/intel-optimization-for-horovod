@@ -302,6 +302,37 @@ protected:
   HorovodGlobalState* global_state_;
 };
 
+class CCLGPUTorusAllreduce : public GPUAllreduce {
+public:
+  CCLGPUTorusAllreduce(CCLGPUContext* local_ccl_context,
+                       CCLGPUContext* cross_ccl_context,
+                       GPUContext* gpu_context,
+                       HorovodGlobalState* global_state)
+      : GPUAllreduce(gpu_context, global_state),
+        local_ccl_context_(local_ccl_context),
+        cross_ccl_context_(cross_ccl_context),
+        local_ccl_op_context_(local_ccl_context, global_state,
+                              Communicator::LOCAL),
+        cross_ccl_op_context_(cross_ccl_context, global_state,
+                              Communicator::CROSS),
+        global_state_(global_state){};
+
+  Status Execute(std::vector<TensorTableEntry>& entries,
+                 const Response& response) override;
+
+  bool Enabled(const ParameterManager& param_manager,
+               const std::vector<TensorTableEntry>& entries,
+               const Response& response) const override;
+
+protected:
+  void WaitForData(std::vector<TensorTableEntry>& entries) override;
+
+  CCLGPUContext* local_ccl_context_;
+  CCLGPUContext* cross_ccl_context_;
+  CCLGPUOpContext local_ccl_op_context_;
+  CCLGPUOpContext cross_ccl_op_context_;
+  HorovodGlobalState* global_state_;
+};
 } // namespace common
 } // namespace horovod
 
