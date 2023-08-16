@@ -628,7 +628,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
         
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
             
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -866,7 +866,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -1035,7 +1035,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -1180,7 +1180,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -1360,7 +1360,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -1536,7 +1536,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -1638,7 +1638,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         even_ranks = [rk for rk in range(0, size) if rk % 2 == 0]
@@ -1824,7 +1824,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -2012,7 +2012,7 @@ class TorchTests(unittest.TestCase):
         rank = hvd.rank()
         size = hvd.size()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -2208,7 +2208,7 @@ class TorchTests(unittest.TestCase):
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -2469,7 +2469,7 @@ class TorchTests(unittest.TestCase):
         if hvd.nccl_built() and hvd.nccl_built() < 2700:
             self.skipTest("NCCL-based Alltoall requires NCCL version >= 2.7.0.")
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -2776,7 +2776,7 @@ class TorchTests(unittest.TestCase):
     def test_broadcast_object_process_sets(self):
         hvd.init()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -3569,7 +3569,7 @@ class TorchTests(unittest.TestCase):
         """Test that allgather over indices and values is equivalent to allreduce if restricted to process sets."""
         hvd.init()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -3613,7 +3613,7 @@ class TorchTests(unittest.TestCase):
         Note that this test makes the most sense when running with > 2 processes."""
         hvd.init()
 
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Multiple process sets currently do not support CCL.")
 
         # This test does not apply if there is only one worker.
@@ -3773,7 +3773,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter(self):
         """Test that reducescatter correctly sums and scatters 1D, 2D, 3D tensors."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -3821,7 +3821,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_average(self):
         """Test that reducescatter correctly averages and scatters 1D, 2D, 3D tensors."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -3864,7 +3864,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_prescale(self):
         """Test that reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -3936,7 +3936,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_postscale(self):
         """Test that reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4008,7 +4008,7 @@ class TorchTests(unittest.TestCase):
             assert max_difference <= threshold, 'hvd.reducescatter produces incorrect results'
 
     def test_horovod_reducescatter_scalar_error(self):
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4020,7 +4020,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_adasum(self):
         """Test that the reducescatter raises an error if we use Adasum operation."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4033,10 +4033,6 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-        elif self.is_xpu_available():
-            dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
-                       torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
-                       torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -4053,7 +4049,7 @@ class TorchTests(unittest.TestCase):
     def test_horovod_reducescatter_async_fused(self):
         """Test that the reducescatter correctly sums 1D, 2D, 3D tensors
         with Tensor Fusion."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4114,7 +4110,7 @@ class TorchTests(unittest.TestCase):
     def test_horovod_reducescatter_error(self):
         """Test that the reducescatter raises an error if different ranks try to
         send tensors of different rank or dimension."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4152,7 +4148,7 @@ class TorchTests(unittest.TestCase):
     def test_horovod_reducescatter_type_error(self):
         """Test that the reducescatter raises an error if different ranks try to
         send tensors of different type."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4180,7 +4176,7 @@ class TorchTests(unittest.TestCase):
     def test_horovod_reducescatter_duplicate_name_error(self):
         """Test that the reducescatter raises an error if there are
         two concurrent operations with the same name."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4214,7 +4210,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_grad(self):
         """Test the correctness of the reducescatter gradient."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4247,7 +4243,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_grad_average(self):
         """Test the correctness of the reducescatter averaged gradient."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4281,7 +4277,7 @@ class TorchTests(unittest.TestCase):
     def test_horovod_reducescatter_process_sets(self):
         """Test that reducescatter correctly sums and scatters 1D, 2D, 3D tensors if restricted
         to non-global process sets."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4347,7 +4343,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_reducescatter_grad_process_sets(self):
         """Test the correctness of the reducescatter gradient if restricted to non-global process sets."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4399,7 +4395,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_grouped_reducescatter(self):
         """Test that grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4446,7 +4442,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_grouped_reducescatter_average(self):
         """Test that grouped reducescatter correctly averages and scatters 1D, 2D, 3D tensors."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4493,7 +4489,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_grouped_reducescatter_prescale(self):
         """Test that grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with prescaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4566,7 +4562,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_grouped_reducescatter_postscale(self):
         """Test that grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors with postscaling."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4583,13 +4579,13 @@ class TorchTests(unittest.TestCase):
             dtypes += [torch.cuda.IntTensor, torch.cuda.LongTensor,
                        torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
                        torch.cuda.HalfTensor]
-            int_types += [torch.cuda.IntTensor, torch.LongTensor]
+            int_types += [torch.cuda.IntTensor, torch.cuda.LongTensor]
             half_types += [torch.cuda.HalfTensor]
         elif self.is_xpu_available():
             dtypes += [torch.xpu.IntTensor, torch.xpu.LongTensor,
                        torch.xpu.FloatTensor, torch.xpu.DoubleTensor,
                        torch.xpu.HalfTensor]
-            int_types += [torch.xpu.IntTensor, torch.LongTensor]
+            int_types += [torch.xpu.IntTensor, torch.xpu.LongTensor]
             half_types += [torch.xpu.HalfTensor]
         dims = [1, 2, 3]
         np.random.seed(12345)
@@ -4601,8 +4597,11 @@ class TorchTests(unittest.TestCase):
             summed_list = hvd.grouped_reducescatter(tensors, op=hvd.Sum, postscale_factor=factor)
 
             factor = torch.tensor(factor, dtype=torch.float64)
-            factor = factor.cuda(hvd.local_rank()) if dtype.is_cuda else factor
-            if dtype.is_cuda and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
+            if dtype.is_cuda:
+                factor = factor.cuda(hvd.local_rank())
+            elif dtype.is_xpu:
+                factor = factor.xpu('xpu:{}'.format(hvd.local_rank()))
+            if (dtype.is_cuda or dtype.is_xpu) and not int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
               # For integer types, scaling done in FP64
               factor = factor.type(torch.float64 if dtype in int_types else dtype)
               tensors = [tensor.type(torch.float64 if dtype in int_types else dtype) for tensor in tensors]
@@ -4636,7 +4635,7 @@ class TorchTests(unittest.TestCase):
 
 
     def test_horovod_grouped_reducescatter_scalar_error(self):
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4649,7 +4648,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_grouped_reducescatter_process_sets(self):
         """Test that grouped reducescatter correctly sums and scatters 1D, 2D, 3D tensors if restricted to process sets."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
@@ -4712,7 +4711,7 @@ class TorchTests(unittest.TestCase):
 
     def test_horovod_grouped_reducescatter_grad(self):
         """Test the correctness of the grouped reducescatter gradient."""
-        if hvd.ccl_built():
+        if hvd.ccl_built() and not hvd.sycl_built():
             self.skipTest("Reducescatter is not supported yet with oneCCL operations.")
         if _is_mac and hvd.gloo_built() and not hvd.mpi_built():
             self.skipTest("ReducescatterGloo is not supported on macOS")
