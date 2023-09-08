@@ -730,8 +730,13 @@ class TorchTests(unittest.TestCase):
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
+            minval = -100
+            maxval = 100
+            if dtype in [torch.HalfTensor, torch.BFloat16Tensor] and size > 2:
+                minval = -1
+                maxval = 1
             tensors = [torch.FloatTensor(
-                *([17] * dim)).random_(-100, 100) for _ in range(5)]
+                *([17] * dim)).random_(minval, maxval) for _ in range(5)]
             multiplied = [self.cast_and_place(
                 tensor * size, dtype) for tensor in tensors]
             tensors = [self.cast_and_place(tensor, dtype)
