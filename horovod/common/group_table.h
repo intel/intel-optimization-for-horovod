@@ -17,6 +17,7 @@
 #include <queue>
 #include <unordered_map>
 #include <vector>
+#include <string>
 
 #ifndef HOROVOD_GROUP_TABLE_H
 #define HOROVOD_GROUP_TABLE_H
