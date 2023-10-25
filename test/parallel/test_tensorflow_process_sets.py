@@ -29,10 +29,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     """
     def __init__(self, *args, **kwargs):
         super(TensorFlowProcessSetsTests, self).__init__(*args, **kwargs)
-        if hvd.sycl_built():
-            # (TODO: Pengfei) Remove this variable after itex support GPUMemory allocation retry.
-            import os
-            os.environ['ITEX_LIMIT_MEMORY_SIZE_IN_MB'] = '4096'
+        self.device_type = 'xpu' if hvd.sycl_built() else 'gpu'
 
     @classmethod
     def setUpClass(cls):
@@ -45,6 +42,9 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         cls.odd_set = hvd.ProcessSet(cls.odd_ranks)
 
         hvd.init(process_sets=[cls.even_set, cls.odd_set])
+        if hvd.sycl_built():
+            # (TODO: Pengfei) Do not set visiable devices after itex support GPUMemory allocation retry.
+            tf.config.set_visible_devices([gpus[hvd.local_rank()]] + cpus)
 
     def tearDown(self):
         """Prevent that one process shuts down Horovod too early"""
@@ -118,7 +118,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     def test_horovod_allreduce_gpu_process_sets(self):
         """ Test on GPU that allreduce correctly sums if restricted to non-global process sets"""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True) and not hvd.sycl_built():
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -131,7 +131,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         dtypes = [tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/%s:%d" % (self.device_type, local_rank)):
                 even_rank_tensor = self.random_uniform([17] * dim, -100, 100)
                 even_rank_tensor = tf.cast(even_rank_tensor, dtype=dtype)
                 odd_rank_tensor = self.random_uniform([17] * dim, -100, 100)
@@ -281,7 +281,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_grouped_allreduce_gpu_process_sets(self):
         """Test on GPU that the grouped allreduce correctly sums if restricted to non-global process sets"""
-        if not tf.test.is_gpu_available(cuda_only=True) and not hvd.sycl_built():
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
             # Skip if compiled with CUDA but without HOROVOD_GPU_OPERATIONS.
@@ -292,7 +292,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         dtypes = self.filter_supported_types([tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64])
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/%s:%d" % (self.device_type, local_rank)):
                 even_rank_tensors = [tf.cast(self.random_uniform(
                     [17] * dim, -100, 100), dtype=dtype) for _ in range(5)]
                 odd_rank_tensors = [tf.cast(self.random_uniform(
@@ -432,7 +432,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
     def test_horovod_allgather_gpu_process_sets(self):
         """Test that the allgather correctly gathers 1D, 2D, 3D tensors if restricted to non-global process sets."""
 
-        if not tf.test.is_gpu_available(cuda_only=True) and not hvd.sycl_built():
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -460,7 +460,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
             if dtype == tf.bool:
                 tensor = tensor % 2
             tensor = tf.cast(tensor, dtype=dtype)
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/%s:%d" % (self.device_type, local_rank)):
                 gathered = hvd.allgather(tensor, process_set=this_set)
 
             gathered_tensor = self.evaluate(gathered)
@@ -591,7 +591,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         """Test that the broadcast correctly broadcasts 1D, 2D, 3D tensors on GPU
          if restricted to non-global process sets"""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True) and not hvd.sycl_built():
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -629,7 +629,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
                 root_tensor = root_tensor % 2
             tensor = tf.cast(tensor, dtype=dtype)
             root_tensor = tf.cast(root_tensor, dtype=dtype)
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/%s:%d" % (self.device_type, local_rank)):
                 broadcasted_tensor = hvd.broadcast(tensor, root_rank, process_set=this_set)
             self.assertTrue(
                 self.evaluate(tf.reduce_all(tf.equal(
@@ -765,7 +765,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_alltoall_gpu_process_sets(self):
         """Test that the GPU alltoall on restricted process sets correctly distributes 1D, 2D, and 3D tensors."""
-        if not tf.test.is_gpu_available(cuda_only=True) and not hvd.sycl_built():
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -791,7 +791,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
                   tf.float64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%s" % local_rank):
+            with tf.device("/%s:%d" % (self.device_type, local_rank)):
                 vals = []
                 for i in set_ranks:
                   vals += [i] * (rank+1)
@@ -1097,7 +1097,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
     def test_horovod_reducescatter_gpu_process_sets(self):
         """Test that the reducescatter works on GPUs if restricted to non-global process sets."""
-        if not tf.test.is_gpu_available(cuda_only=True) and not hvd.sycl_built():
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -1117,7 +1117,7 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
         dtypes = [tf.int32, tf.int64, tf.float16, tf.float32, tf.float64]
         dims = [1, 2, 3]
         for red_op, dtype, dim in itertools.product([hvd.Sum, hvd.Average], dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/%s:%d" % (self.device_type, local_rank)):
                 even_rank_tensor = self.random_uniform([process_set_size * 4] * dim, -100, 100, dtype=dtype)
                 odd_rank_tensor = self.random_uniform([process_set_size * 4] * dim, -100, 100, dtype=dtype)
                 if rank in self.even_ranks:

@@ -32,8 +32,11 @@ if hasattr(tf, 'ConfigProto'):
 if hasattr(tf, 'config') and hasattr(tf.config, 'experimental') \
         and hasattr(tf.config.experimental, 'set_memory_growth'):
     gpus = tf.config.experimental.list_physical_devices('GPU')
+    if not gpus:
+        gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
+    cpus = tf.config.experimental.list_physical_devices('CPU')
 else:
     # Specifies the config to use with eager execution. Does not preclude
     # tests from running in the graph mode.
