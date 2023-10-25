@@ -363,9 +363,9 @@ endif()
 
 # oneCCL
 if(USE_CCL)
-    set(CCL_CONFIGURATION $ENV{CCL_CONFIGURATION})
+    set(CCL_CONFIGURATION_PATH $ENV{CCL_CONFIGURATION_PATH})
     include_directories(${CCL_ROOT}/include)
-    list(APPEND LINKER_LIBS "${CCL_ROOT}/lib/${CCL_CONFIGURATION}/libccl.so")
+    list(APPEND LINKER_LIBS "${CCL_ROOT}/lib/${CCL_CONFIGURATION_PATH}/libccl.so")
     if (USE_GPU_CCL)
         list(APPEND SOURCES "${PROJECT_SOURCE_DIR}/horovod/common/ops/ccl_gpu_operations.cc")
     else()
