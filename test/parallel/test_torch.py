@@ -3366,9 +3366,6 @@ class TorchTests(unittest.TestCase):
         """Tests Horovod version of SyncBatchNorm."""
         if not torch.cuda.is_available() and not self.is_xpu_available():
             self.skipTest("No GPUs available")
-        # TODO: remove it once support HVD sync_batch_norm on XPU
-        if hvd.sycl_built():
-            self.skipTest("Not support HVD sync_batch_norm on XPU yet")
 
         hvd.init()
 
