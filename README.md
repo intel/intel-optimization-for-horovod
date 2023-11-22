@@ -3,15 +3,15 @@ Intel® Optimization for Horovod* is the distributed training framework for Tens
 ## Install
 
 ### Hardware Requirements
- - Intel® Data Center GPU Max Series, Driver Version: [647](https://dgpu-docs.intel.com/releases/stable_647_21_20230714.html)
+ - Intel® Data Center GPU Max Series, Driver Version: [736](https://dgpu-docs.intel.com/releases/stable_736_25_20231031.html)
 
 
 
 |Software|Installation requirement|
 |-|-|
-|Intel® oneAPI Base Toolkit|[Install Intel® oneAPI Base Toolkit](https://github.com/intel/intel-extension-for-tensorflow/tree/r2.13/docs/install/install_for_xpu.md#install-oneapi-base-toolkit-packages)|
-|TensorFlow|[Install tensorflow 2.13.0](https://www.tensorflow.org/install)|
-|Intel® Extension for TensorFlow*|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow/tree/r2.13#install) |
+|Intel® oneAPI Base Toolkit|[Install Intel® oneAPI Base Toolkit](https://github.com/intel/intel-extension-for-tensorflow/tree/r2.14/docs/install/install_for_xpu.md#install-oneapi-base-toolkit-packages)|
+|TensorFlow|[Install tensorflow 2.14.0](https://www.tensorflow.org/install)|
+|Intel® Extension for TensorFlow*|[Install Intel® Extension for TensorFlow*](https://github.com/intel/intel-extension-for-tensorflow/tree/r2.14#install) |
 |System|Ubuntu 22.04, RedHat 8.6 (64-bit), SUSE Linux Enterprise Server(SLES) 15 SP3/SP4|
 |Python|3.8-3.10|
 |Pip|19.0 or later (requires manylinux2014 support)|
@@ -20,7 +20,7 @@ Intel® Optimization for Horovod* is the distributed training framework for Tens
 
 |OS|Intel GPU|Install Intel GPU Driver|
 |-|-|-|
-|Ubuntu 22.04, RedHat 8.6, SLES 15 SP3/SP4|Intel® Data Center GPU Max Series|  Refer to the [Installation Guides](https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series) for latest driver installation. If install the verified Intel® Data Center GPU Max Series/Intel® Data Center GPU Flex Series [647](https://dgpu-docs.intel.com/releases/stable_647_21_20230714.html), please append the specific version after components.|
+|Ubuntu 22.04, RedHat 8.6, SLES 15 SP3/SP4|Intel® Data Center GPU Max Series|  Refer to the [Installation Guides](https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series) for latest driver installation. If install the verified Intel® Data Center GPU Max Series/Intel® Data Center GPU Flex Series [736](https://dgpu-docs.intel.com/releases/stable_736_25_20231031.html), please append the specific version after components.|
 
 
 ### Installation Channel:
@@ -36,7 +36,7 @@ Intel® Optimization for Horovod* can be installed through the following channel
 Installing Intel® Optimization for Horovod* with different frameworks is feasible. You could choose Intel® Extension for TensorFlow* as dependency.
  1. Installing Intel® Extension for TensorFlow* and Intel® Optimization for Horovod* with command: <br/>
     ```bash
-    pip install tensorflow==2.13.0
+    pip install tensorflow==2.14.0
     pip install --upgrade intel-extension-for-tensorflow[xpu]
     pip install intel-optimization-for-horovod
     ```

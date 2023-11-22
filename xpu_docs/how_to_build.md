@@ -20,9 +20,9 @@ Need to install components of Intel® oneAPI Base Toolkit:
 - Intel® oneAPI MPI Library (IntelMPI)
 
 ```bash
-$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/992857b9-624c-45de-9701-f6445d845359/l_BaseKit_p_2023.2.0.49397_offline.sh
+$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/20f4e6a1-6b0b-4752-b8c1-e5eacba10e01/l_BaseKit_p_2024.0.0.49564.sh
 # 3 components are necessary: DPC++/C++ Compiler with DPC++ Libiary, oneMKL and oneCCL(IntelMPI will be installed automatically as oneCCL's dependency).
-$ sudo sh ./l_BaseKit_p_2023.2.0.49397_offline.sh
+$ sudo sh ./l_BaseKit_p_2024.0.0.49564.sh
 ```
 
 For any more details, please follow the procedure in https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html.
@@ -44,7 +44,7 @@ source /path to basekit/intel/oneapi/ccl/latest/env/vars.sh
 Intel® Optimization for Horovod* depends on TensorFlow* to build from source.
 
 ```bash
-$ pip install tensorflow==2.13.0
+$ pip install tensorflow==2.14.0
 
 ```
 

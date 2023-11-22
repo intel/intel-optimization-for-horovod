@@ -16,7 +16,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-## [0.28.1] - YYYY-MM-DD
+## [0.28.1.2] - YYYY-MM-DD
+
+### Added
+
+- Supported empty input buffer for AlltoAll primitive.
+- Enabled TorusAllreduce for Intel GPU device.
+
+### Changed
+
+- Updated Pytorch ResNet50 example with Intel GPU support.
+- Supported ReduceScatter in Pytorch UTs.
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- Set special range for half and bf16 tensor for multi cards UTs.
+- Fixed GCC13 CPU build issue.
+- Fixed oneccl link path in cmakelist.
+- Replaced '/gpu' to '/xpu' in tensorflow UTs.
+- Fixed GPU check condition bug in pytorch sync_batch_norm.
+
+## [0.28.1.0] - YYYY-MM-DD
 
 ### Added
 
