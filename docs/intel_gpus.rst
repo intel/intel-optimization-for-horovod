@@ -33,8 +33,8 @@ There are necessary 3 components for horovod on Intel GPU:
 
 .. code-block:: bash
 
-    $ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/7deeaac4-f605-4bcf-a81b-ea7531577c61/l_BaseKit_p_2023.1.0.46401_offline.sh     
-    $ sudo sh ./l_BaseKit_p_2023.1.0.46401_offline.sh
+    $ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/20f4e6a1-6b0b-4752-b8c1-e5eacba10e01/l_BaseKit_p_2024.0.0.49564.sh     
+    $ sudo sh ./l_BaseKit_p_2024.0.0.49564.sh
 
 For any more details, follow the `procedures <https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html>`__.
    
