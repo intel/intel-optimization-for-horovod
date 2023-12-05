@@ -82,6 +82,17 @@ public:
   // oneCCL does not support async error check
   std::function<void()> error_check_callback_;
 
+  // a override version of GPUOpContext::FinalizeGPUQueue,
+  // to prolong ccl::event's live until background thread
+  // exit lambda function(which captures a shared_ptr of
+  // a ccl::event vector).
+  Status
+  FinalizeGPUQueue(GPUOpContext* gpu_op_context, GPUContext* gpu_context,
+                   std::vector<TensorTableEntry>& entries,
+                   std::shared_ptr<std::vector<ccl::event>> ccl_events,
+                   bool free_host_buffer = true,
+                   const std::function<void()>& error_check_callback = nullptr);
+
 private:
   void PopulateCCLCommStrategy(int& ccl_rank, int& ccl_size,
                                Communicator& ccl_id_bcast_comm,
