@@ -440,8 +440,10 @@ if __name__ == '__main__':
     # print training throughput
     if score and args.baseline_test:
         min_score = hvd.allreduce(torch.tensor([score]), op=hvd.Min)[0]
+        max_score = hvd.allreduce(torch.tensor([score]), op=hvd.Max)[0]
     if score and verbose:
         if args.baseline_test:
-            print(f'Baseline Benchmark Score: {min_score:.1f} imgs/sec/rank, nodes/ranks {int(hvd.size()/hvd.local_size())}x{hvd.local_size()}')
+            print(f'Baseline Benchmark Min Score: {min_score:.1f} imgs/sec/rank, nodes/ranks {int(hvd.size()/hvd.local_size())}x{hvd.local_size()}')
+            print(f'Baseline Benchmark Max Score: {max_score:.1f} imgs/sec/rank, nodes/ranks {int(hvd.size()/hvd.local_size())}x{hvd.local_size()}')
         else:
             print(f'Benchmark Score: {score:.1f} imgs/sec/rank, nodes/ranks {int(hvd.size()/hvd.local_size())}x{hvd.local_size()}')
