@@ -34,21 +34,11 @@
 #define EIGEN_USE_HIP
 #endif
 
+#include "tensorflow/c/tf_tensor.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/framework/common_shape_fns.h"
-
-#if HAVE_SYCL
-#if TENSORFLOW_VERSION >= 2005000000
-#include "tensorflow/c/experimental/stream_executor/stream_executor.h"
-#include "tensorflow/c/kernels.h"
-#include "tensorflow/c/ops.h"
-#include "tensorflow/c/tf_status.h"
-#else
-#error "SYCL supports TensorFlow with PluggableDevice only."
-#endif // TENSORFLOW_VERSION >= 2005000000
-#endif // HAVE_SYCL
 
 #if TENSORFLOW_VERSION >= 2006000000
 #include "tensorflow/core/framework/resource_mgr.h"
@@ -65,11 +55,7 @@ using GpuStreamHandle = gpuStream_t;
 #endif // HAVE_CUDA, HAVE_ROCM
 
 #if HAVE_SYCL
-struct SP_Stream_st {
-  explicit SP_Stream_st(gpuStream_t stream_h) : stream_handle(stream_h) {}
-  gpuStream_t stream_handle;
-};
-#include "inplace_bcast_sycl_helper.h"
+#include "tensorflow_sycl_helper.h"
 #endif // HAVE_SYCL
 
 // Forward declaration of AsGpuStreamValue
@@ -94,8 +80,6 @@ GpuStreamHandle AsGpuStreamValue(Stream* stream);
 
 using namespace tensorflow;
 using namespace horovod;
-
-const char* const DEVICE_XPU = "XPU";
 
 namespace horovod {
 namespace tensorflow {
@@ -171,6 +155,57 @@ common::Status ConvertStatus(const Status& status) {
   }
 }
 
+Status
+xpu_allocate_temp(OpKernelContext* context, DataType type,
+                  const TensorShape& shape, Tensor* out_temp,
+                  TF_Tensor** tf_tmp,
+                  AllocatorAttributes alloc_attrs = AllocatorAttributes()) {
+  if (!tf_tmp)
+    throw std::runtime_error("xpu_allocate_temp require tf_tmp != nullptr.");
+#if HAVE_TFNPD
+  if (UseTFNPD()) {
+    return npd_allocate_temp(context, type, shape, out_temp, tf_tmp,
+                             alloc_attrs);
+  }
+#endif
+  *tf_tmp = nullptr;
+  return context->allocate_temp(type, shape, out_temp, alloc_attrs);
+}
+
+Status xpu_allocate_output(OpKernelContext* context, int index,
+                           const TensorShape& shape, Tensor** tensor,
+                           TF_Tensor** tf_tensor) {
+  if (!tf_tensor)
+    throw std::runtime_error(
+        "xpu_allocate_output require tf_tensor != nullptr.");
+#if HAVE_TFNPD
+  if (UseTFNPD()) {
+    return npd_allocate_output(context, index, shape, tensor, tf_tensor);
+  }
+#endif
+  *tf_tensor = nullptr;
+  return context->allocate_output(index, shape, tensor);
+}
+
+template <typename Device, typename T>
+Status XPUGetInputTensorFromVariable(OpKernelContext* ctx, int input,
+                                     bool lock_held, bool sparse, Tensor* out,
+                                     TF_Tensor** tf_out) {
+  if (!tf_out)
+    throw std::runtime_error(
+        "XPUGetInputTensorFromVariable require tf_out != nullptr.");
+#if HAVE_TFNPD
+  if (UseTFNPD()) {
+    return NpdGetInputTensorFromVariableHelper(
+        ctx, input, lock_held, sparse, out, tf_out,
+        NpdDenseAssignWrapper<Device, T>);
+  }
+#endif
+  *tf_out = nullptr;
+  return GetInputTensorFromVariable<Device, T>(ctx, input, lock_held, sparse,
+                                               out);
+}
+
 int GetDeviceID(OpKernelContext* context);
 
 #if HAVE_GPU
@@ -201,6 +236,7 @@ private:
 };
 #endif // HAVE_GPU
 
+class TFTensor;
 class TFPersistentBuffer : public common::PersistentBuffer {
 public:
   TFPersistentBuffer(OpKernelContext* context, int64_t size);
@@ -208,19 +244,48 @@ public:
   AccessData(std::shared_ptr<common::OpContext> context) const override;
 
 private:
-  std::shared_ptr<Tensor> tensor_;
+  std::shared_ptr<TFTensor> tensor_;
 };
 
+// Differences between tf Tensor and TF_Tensor*:
+// 1. both tf Tensor and TF_Tensor* hold a ref to tensor_buffer.
+// 2. tf Tensor would unref when it deconstruct.
+// 3. TF_Tensor* would unref when it is deleted by TF_DeleteTensor().
+
+// In IOH, TF_Tensor* is generated when ITEX uses NextPluggableDevice as
+// runtime. There are two scenarios we need to use TF_Tensor* C api instead of
+// tf Tensor:
+// 1. allocate_temp or allocate_output tf Tensor when use TFNPD.
+// 2. read tf Tensor's tensor_buffer when use TFNPD.
+// In above two cases, tf would new a TF_Tensor's pointer from given tf Tensor.
+
+// For a tf Tensor, horovod may read its tensor_buffer many time, and each time
+// tf would new a TF_Tensor and return its pointer. So when use TFNPD, it is
+// better to store a tf Tensor's TF_Tensor* when we got it at first time and
+// then reuse it, instead of generating a TF_Tensor* and delete it every time.
+
+// Because Horovod uses std::shared_ptr<TFTensor> to manage a tf Tensor's
+// livetime. Here we store a tf Tensor's corresponding TF_Tensor* in class
+// TFTensor. 
+// The tf_tensor_ should be assigned as
+// 1. TF_Tensor* returned by npd_allocate_temp or npd_allocate_output in
+// TFTensor::TFTensor().
+// 2. TF_Tensor* returned by TF_TensorFromTensor() when calling TFTensor::data()
+// first time.
+// Only TFNPD's device tf Tensor would hold a un-null TF_Tensor* and it would be
+// deleted in TFTensor's deconstruction function.
 class TFTensor : public common::Tensor {
 public:
-  TFTensor(::tensorflow::Tensor& tensor);
+  TFTensor(::tensorflow::Tensor& tensor, TF_Tensor* tf_tensor = nullptr);
   virtual const common::DataType dtype() const override;
   virtual const common::TensorShape shape() const override;
   virtual const void* data() const override;
   virtual int64_t size() const override;
+  virtual ~TFTensor() override;
 
 protected:
   ::tensorflow::Tensor tensor_;
+  mutable TF_Tensor* tf_tensor_;
 };
 
 class TFOpContext : public common::OpContext {
@@ -302,16 +367,21 @@ TFReadyEvent::~TFReadyEvent() {
 #endif // HAVE_GPU
 
 TFPersistentBuffer::TFPersistentBuffer(OpKernelContext* context, int64_t size) {
-  tensor_ = std::make_shared<Tensor>();
+  auto tensor = std::make_shared<Tensor>();
   TensorShape buffer_shape;
   buffer_shape.AddDim(size);
-  Status status = context->allocate_temp(DT_INT8, buffer_shape, tensor_.get());
+  TF_Tensor* tf_tensor;
+  Status status = xpu_allocate_temp(context, DT_INT8, buffer_shape, tensor.get(),
+                                   &tf_tensor);
+  tensor_ = std::make_shared<TFTensor>(*tensor);
   if (!status.ok()) {
     throw status;
   }
-#if HAVE_GPU
+
+#if HAVE_GPU && !HAVE_SYCL
   // On GPU allocation is asynchronous, we need to wait for it to
-  // complete.
+  // complete. For SYCL, all memory allocations are asynchronous.
+  // So SYCL don't need to block host here.
   auto device_context = context->op_device_context();
   if (device_context != nullptr) {
     status = device_context->stream()->BlockHostUntilDone();
@@ -324,10 +394,16 @@ TFPersistentBuffer::TFPersistentBuffer(OpKernelContext* context, int64_t size) {
 
 const void* TFPersistentBuffer::AccessData(
     std::shared_ptr<common::OpContext> context) const {
-  return (const void *)tensor_->tensor_data().data();
+  return tensor_->data();
 }
 
-TFTensor::TFTensor(::tensorflow::Tensor& tensor) : tensor_(tensor) {}
+TFTensor::TFTensor(::tensorflow::Tensor& tensor, TF_Tensor* tf_tensor)
+    : tensor_(tensor), tf_tensor_(tf_tensor) {}
+
+TFTensor::~TFTensor() {
+  if (tf_tensor_)
+    TF_DeleteTensor(tf_tensor_);
+}
 
 const common::DataType TFTensor::dtype() const {
   switch (tensor_.dtype()) {
@@ -366,7 +442,20 @@ const common::TensorShape TFTensor::shape() const {
   return shape;
 }
 
-const void* TFTensor::data() const { return (const void*)tensor_.tensor_data().data(); }
+const void* TFTensor::data() const {
+#if HAVE_TFNPD
+  if (UseTFNPD()) {
+    if (!tf_tensor_) {
+      ::tensorflow::Status s;
+      tf_tensor_ = TF_TensorFromTensor(tensor_, &s);
+      if (!s.ok())
+        throw s;
+    }
+    return (const void*)tf_tensor_get_raw_data(tf_tensor_);
+  }
+#endif
+  return (const void*)tensor_.tensor_data().data();
+}
 
 int64_t TFTensor::size() const { return (int64_t)tensor_.tensor_data().size(); }
 
@@ -381,17 +470,7 @@ ConvertToTFTensorShape(const common::TensorShape& shape) {
 
 #if HAVE_GPU && HAVE_SYCL
 sycl::queue TFOpContext::SYCLQueue() const {
-  TF_Status* s = TF_NewStatus();
-  auto sp_stream =
-      TF_GetStream(reinterpret_cast<TF_OpKernelContext*>(context_), s);
-  if (TF_GetCode(s) == TF_OK) {
-    TF_DeleteStatus(s);
-    return *(reinterpret_cast<SP_Stream_st*>(sp_stream)->stream_handle);
-  } else {
-    std::string err_msg = TF_Message(s);
-    TF_DeleteStatus(s);
-    throw std::runtime_error("Failed to get stream, error message: " + err_msg);
-  }
+  return ::GetSYCLQueue(context_);
 }
 #endif
 
@@ -432,9 +511,11 @@ TFOpContext::AllocateOutput(int output_index, common::TensorShape shape,
                             std::shared_ptr<common::ReadyEvent>* event) {
   TensorShape tf_shape = ConvertToTFTensorShape(shape);
   Tensor* tf_tensor;
-  Status status = context_->allocate_output(output_index, tf_shape, &tf_tensor);
+  TF_Tensor* tf_tensor_;
+  Status status = xpu_allocate_output(context_, output_index, tf_shape,
+                                     &tf_tensor, &tf_tensor_);
   if (status.ok()) {
-    *tensor = std::make_shared<TFTensor>(*tf_tensor);
+    *tensor = std::make_shared<TFTensor>(*tf_tensor, tf_tensor_);
   }
 #if HAVE_GPU
   // On GPU allocation is asynchronous, we need to wait for it to
@@ -442,10 +523,16 @@ TFOpContext::AllocateOutput(int output_index, common::TensorShape shape,
   auto device_context = context_->op_device_context();
   if (device_context != nullptr) {
     if (event == nullptr) {
+#if HAVE_SYCL
+      auto ctx = std::make_shared<TFOpContext>(context_);
+      auto stream = ctx->SYCLQueue();
+      stream.wait();
+#else
       auto status_gpu = device_context->stream()->BlockHostUntilDone();
       if (!status_gpu.ok()) {
         return ConvertStatus(status_gpu);
       }
+#endif
     } else {
       *event = std::shared_ptr<common::ReadyEvent>(RecordReadyEvent(context_));
     }
@@ -460,6 +547,7 @@ common::Status
 TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
                            std::shared_ptr<common::Tensor>* tensor) {
   std::shared_ptr<Tensor> zero_tensor = std::make_shared<Tensor>();
+  TF_Tensor* tf_tensor;
   auto tf_data_type = GetTFDataType(dtype);
   ::tensorflow::AllocatorAttributes tf_attribute;
   int device_ = GetDeviceID(context_);
@@ -470,7 +558,13 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
     tf_attribute.set_on_host(true);
   }
 
-  Status status = context_->allocate_temp(tf_data_type, ::tensorflow::TensorShape({num_elements}), zero_tensor.get(), tf_attribute);
+  Status status = xpu_allocate_temp(context_, tf_data_type,
+                                   ::tensorflow::TensorShape({num_elements}),
+                                   zero_tensor.get(), &tf_tensor, tf_attribute);
+
+#if HAVE_GPU && HAVE_SYCL
+  gpuEvent_t ev;
+#endif // HAVE_GPU && HAVE_SYCL
 
   if (device_ != CPU_DEVICE_ID) {
 #if HAVE_GPU
@@ -478,9 +572,10 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
 #if HAVE_SYCL
     // device_context == nullptr means CPU device, not need to check here
     auto stream = this->SYCLQueue();
-    void *ptr = (void*)zero_tensor->tensor_data().data();
+    auto zero_tensor_ = std::make_shared<TFTensor>(*zero_tensor);
+    void *ptr = (void*)zero_tensor_->data();
     auto size = zero_tensor->tensor_data().size();
-    stream.memset(ptr, 0, size);
+    ev = stream.memset(ptr, 0, size);
 #else
     auto stream = (device_context != nullptr) ? stream_executor::gpu::AsGpuStreamValue(device_context->stream()) : 0;
     void *ptr = (void*)zero_tensor->tensor_data().data();
@@ -492,7 +587,7 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
     memset((void*)zero_tensor->tensor_data().data(), 0, zero_tensor->tensor_data().size());
   }
   if (status.ok()) {
-    *tensor = std::make_shared<TFTensor>(*zero_tensor);
+    *tensor = std::make_shared<TFTensor>(*zero_tensor, tf_tensor);
   }
 
 #if HAVE_GPU
@@ -500,10 +595,14 @@ TFOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
   // complete.
   auto device_context = context_->op_device_context();
   if (device_context != nullptr) {
+#if HAVE_SYCL
+    ev.wait();
+#else
     auto status_gpu = device_context->stream()->BlockHostUntilDone();
     if (!status_gpu.ok()) {
       return ConvertStatus(status_gpu);
     }
+#endif // HAVE_SYCL
   }
 #endif // HAVE_GPU
   return ConvertStatus(status);
@@ -518,6 +617,11 @@ int GetDeviceID(OpKernelContext* context) {
 #if TENSORFLOW_VERSION >= 2009000000
   if (context->device() != nullptr &&
       context->device()->tensorflow_accelerator_device_info() != nullptr) {
+#if HAVE_TFNPD
+    if (UseTFNPD()) {
+      return TF_GetDeviceId(reinterpret_cast<TF_OpKernelContext*>(context));
+    }
+#endif
     device = context->device()->tensorflow_accelerator_device_info()->gpu_id;
   }
 #else
@@ -557,8 +661,9 @@ public:
     auto tensor = context->input(0);
     horovod::common::ReduceOp reduce_op = static_cast<horovod::common::ReduceOp>(reduce_op_);
     Tensor* output;
+    TF_Tensor* tf_output;
     OP_REQUIRES_OK_ASYNC(
-        context, context->allocate_output(0, tensor.shape(), &output), done);
+        context, xpu_allocate_output(context, 0, tensor.shape(), &output, &tf_output), done);
     // ReadyEvent makes sure input tensor is ready, and output is allocated.
     common::ReadyEventList ready_event_list;
 #if HAVE_GPU
@@ -566,7 +671,7 @@ public:
 #endif
     auto hvd_context = std::make_shared<TFOpContext>(context);
     auto hvd_tensor = std::make_shared<TFTensor>(tensor);
-    auto hvd_output = std::make_shared<TFTensor>(*output);
+    auto hvd_output = std::make_shared<TFTensor>(*output, tf_output);
     auto enqueue_result = EnqueueTensorAllreduce(
         hvd_context, hvd_tensor, hvd_output, ready_event_list, node_name, device,
 #if HAVE_SYCL
@@ -669,6 +774,7 @@ public:
     auto device = GetDeviceID(context);
     horovod::common::ReduceOp reduce_op = static_cast<horovod::common::ReduceOp>(reduce_op_);
     std::vector<Tensor*> outputs(num_tensors_);
+    std::vector<TF_Tensor*> tf_outputs(num_tensors_);
 
     std::vector<common::ReadyEventList> ready_event_lists;
     std::vector<std::shared_ptr<common::OpContext>> hvd_contexts;
@@ -689,7 +795,7 @@ public:
     for (int i = 0; i < num_tensors_; ++i) {
       auto tensor = context->input(i);
       OP_REQUIRES_OK_ASYNC(
-          context, context->allocate_output(i, tensor.shape(), &outputs[i]),
+          context, xpu_allocate_output(context, i, tensor.shape(), &outputs[i], &tf_outputs[i]),
           done);
     }
 
@@ -708,7 +814,7 @@ public:
       hvd_tensors.emplace_back(std::make_shared<TFTensor>(tensor));
       names.emplace_back(node_name + "_" + std::to_string(i + 1) + "of" +
                          std::to_string(num_tensors));
-      hvd_outputs.emplace_back(std::make_shared<TFTensor>(*outputs[i]));
+      hvd_outputs.emplace_back(std::make_shared<TFTensor>(*outputs[i], tf_outputs[i]));
       callbacks.emplace_back(
 #if HAVE_SYCL
           [context, done, callback_mutex, callback_count, num_tensors, hvd_context]
@@ -1064,11 +1170,12 @@ public:
     auto device = GetDeviceID(context);
     auto tensor = context->input(0);
     Tensor* output = nullptr;
+    TF_Tensor* tf_output;
     if (common::horovod_rank() == root_rank_) {
       context->set_output(0, tensor);
     } else {
       OP_REQUIRES_OK_ASYNC(
-          context, context->allocate_output(0, tensor.shape(), &output), done);
+          context, xpu_allocate_output(context, 0, tensor.shape(), &output, &tf_output), done);
     }
     // ReadyEvent makes sure input tensor is ready, and output is allocated.
     common::ReadyEventList ready_event_list;
@@ -1079,7 +1186,7 @@ public:
     auto hvd_tensor = std::make_shared<TFTensor>(tensor);
     std::shared_ptr<TFTensor> hvd_output = nullptr;
     if (output != nullptr) {
-      hvd_output = std::make_shared<TFTensor>(*output);
+      hvd_output = std::make_shared<TFTensor>(*output, tf_output);
     }
     auto enqueue_result = EnqueueTensorBroadcast(
         hvd_context, hvd_tensor, hvd_output, root_rank_, ready_event_list,
@@ -1283,8 +1390,10 @@ private:
     }
 
     Tensor tensor;
-    TF_RETURN_IF_ERROR(GetInputTensorFromVariable<Device, T>(
-        context, tensor_index, do_lock, sparse, &tensor));
+    TF_Tensor* tf_tensor;
+    TF_RETURN_IF_ERROR(XPUGetInputTensorFromVariable<Device, T>(
+        context, tensor_index, do_lock, sparse, &tensor, &tf_tensor));
+
     Tensor* output = &tensor;
     MaybeForwardRefInputToRefOutput(context, tensor_index, tensor_index);
 
@@ -1307,7 +1416,7 @@ private:
 #endif
     auto hvd_context = std::make_shared<TFOpContext>(context);
     auto hvd_tensor = std::make_shared<TFTensor>(tensor);
-    auto hvd_output = std::make_shared<TFTensor>(*output);
+    auto hvd_output = std::make_shared<TFTensor>(*output, tf_tensor);
     const std::string node_name =
         name() + "_" + NormalizeNameForTensorFlow(var_name);
     auto enqueue_result = EnqueueTensorBroadcast(
@@ -1465,6 +1574,7 @@ public:
     auto tensor = context->input(0);
     auto hvd_tensor = std::make_shared<TFTensor>(tensor);
     Tensor* output;
+    TF_Tensor* tf_output;
     {
       auto horovod_input_tensor_shape = hvd_tensor->shape();
       OP_REQUIRES_ASYNC(context, horovod_input_tensor_shape.dims() > 0,
@@ -1490,7 +1600,7 @@ public:
               horovod_input_tensor_shape, process_set_rank, process_set_size);
       auto tf_output_shape = ConvertToTFTensorShape(horovod_output_shape);
       OP_REQUIRES_OK_ASYNC(
-          context, context->allocate_output(0, tf_output_shape, &output), done);
+          context, xpu_allocate_output(context, 0, tf_output_shape, &output, &tf_output), done);
     }
     // ReadyEvent makes sure input tensor is ready, and output is allocated.
     common::ReadyEventList ready_event_list;
@@ -1499,7 +1609,7 @@ public:
         std::shared_ptr<common::ReadyEvent>(RecordReadyEvent(context)));
 #endif
     auto hvd_context = std::make_shared<TFOpContext>(context);
-    auto hvd_output = std::make_shared<TFTensor>(*output);
+    auto hvd_output = std::make_shared<TFTensor>(*output, tf_output);
     auto enqueue_result = EnqueueTensorReducescatter(
         hvd_context, hvd_tensor, hvd_output, ready_event_list, node_name,
         device,
@@ -1637,6 +1747,7 @@ public:
     int num_tensors = num_tensors_;
 
     std::vector<Tensor*> outputs(num_tensors_);
+    std::vector<TF_Tensor*> tf_outputs(num_tensors_);
     for (int i = 0; i < num_tensors_; ++i) {
       auto tensor = context->input(i);
       hvd_tensors.emplace_back(std::make_shared<TFTensor>(tensor));
@@ -1665,7 +1776,7 @@ public:
               horovod_input_tensor_shape, process_set_rank, process_set_size);
       auto tf_output_shape = ConvertToTFTensorShape(horovod_output_shape);
       OP_REQUIRES_OK_ASYNC(
-          context, context->allocate_output(i, tf_output_shape, &outputs[i]),
+          context, xpu_allocate_output(context, i, tf_output_shape, &outputs[i], &tf_outputs[i]),
           done);
     }
 
@@ -1682,7 +1793,7 @@ public:
           ready_event_list); // Same for all tensors in group
       auto hvd_context = std::make_shared<TFOpContext>(context);
       hvd_contexts.emplace_back(hvd_context);
-      hvd_outputs.emplace_back(std::make_shared<TFTensor>(*outputs[i]));
+      hvd_outputs.emplace_back(std::make_shared<TFTensor>(*outputs[i], tf_outputs[i]));
       names.emplace_back(node_name + "_" + std::to_string(i + 1) + "of" +
                          std::to_string(num_tensors));
       callbacks.emplace_back(
@@ -1797,15 +1908,16 @@ public:
                          done);
     auto device = GetDeviceID(context);
     Tensor* output = nullptr;
+    TF_Tensor* tf_output;
     OP_REQUIRES_OK_ASYNC(
-        context, context->allocate_output(0, TensorShape(), &output), done);
+        context, xpu_allocate_output(context, 0, TensorShape(), &output, &tf_output), done);
 
     common::ReadyEventList ready_event_list;
 #if HAVE_GPU
     ready_event_list.AddReadyEvent(std::shared_ptr<common::ReadyEvent>(RecordReadyEvent(context)));
 #endif
     auto hvd_context = std::make_shared<TFOpContext>(context);
-    std::shared_ptr<TFTensor> hvd_output = std::make_shared<TFTensor>(*output);
+    std::shared_ptr<TFTensor> hvd_output = std::make_shared<TFTensor>(*output, tf_output);
     auto enqueue_result = EnqueueJoin(
       hvd_context, hvd_output, ready_event_list,
       JOIN_TENSOR_NAME, device,
@@ -1879,11 +1991,13 @@ public:
 
     // Write integer to output tensor
     Tensor* output;
+    TF_Tensor* tf_output;
     OP_REQUIRES_OK(context,
-                   context->allocate_output(0, TensorShape({}), &output));
+                   xpu_allocate_output(context, 0, TensorShape({}), &output, &tf_output));
 
     auto flat = output->flat<T>();
     flat(0) = f(process_set_id_);
+    if (tf_output) TF_DeleteTensor(tf_output);
   }
 
 private:
@@ -1956,11 +2070,13 @@ public:
 
     // Write integer to output tensor
     Tensor* output;
+    TF_Tensor* tf_output;
     OP_REQUIRES_OK(context,
-                   context->allocate_output(0, TensorShape({}), &output));
+                   xpu_allocate_output(context, 0, TensorShape({}), &output, &tf_output));
 
     auto flat = output->flat<T>();
     flat(0) = f();
+    if (tf_output) TF_DeleteTensor(tf_output);
   }
 };
 

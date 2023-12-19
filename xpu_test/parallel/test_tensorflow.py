@@ -1130,7 +1130,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         with self.assertRaises(tf.errors.FailedPreconditionError):
             self.evaluate(hvd.broadcast(tensor, rank))
 
-
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_gpu(self):
         """Test that the alltoall correctly distributes 1D, 2D, and 3D tensors on GPU."""
         # Only do this test if there are GPUs available.
@@ -1178,6 +1178,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 self.assertSequenceEqual(self.evaluate(received_splits).tolist(), [rk + 1 for rk in range(size)],
                                          "hvd.alltoall returned incorrect received_splits")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_equal_split_gpu(self):
         """Test that the alltoall correctly distributes 1D tensors with default splitting on GPU."""
         # Only do this test if there are GPUs available.
@@ -1221,6 +1222,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                     self.evaluate(tf.equal(tf.size(collected), size * (size + 1) // 2 * 2**(dim - 1))),
                     "hvd.alltoall collected wrong number of values")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_grad_gpu(self):
         """Test the correctness of the alltoall gradient on GPU."""
         # Only do this test if there are GPUs available.
@@ -1276,6 +1278,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                             "gradient %s differs from expected %s, "
                             "error: %s" % (grad_out, expected, str(err)))
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_equal_split_grad_gpu(self):
         """Test the correctness of the alltoall gradient with default splitting on GPU."""
         # Only do this test if there are GPUs available.

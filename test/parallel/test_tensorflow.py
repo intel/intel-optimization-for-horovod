@@ -3132,6 +3132,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 self.assertSequenceEqual(self.evaluate(received_splits).tolist(), [rk + 1 for rk in range(size)],
                                          "hvd.alltoall returned incorrect received_splits")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_gpu(self):
         """Test that the alltoall correctly distributes 1D, 2D, and 3D tensors on GPU."""
         # Only do this test if there are GPUs available.
@@ -3209,6 +3210,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                     self.evaluate(tf.equal(tf.size(collected), size * (size + 1) // 2 * 2**(dim - 1))),
                     "hvd.alltoall collected wrong number of values")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_equal_split_gpu(self):
         """Test that the alltoall correctly distributes 1D tensors with default splitting on GPU."""
         # Only do this test if there are GPUs available.
@@ -3270,6 +3272,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                     self.evaluate(tf.equal(tf.size(collected), 0)),
                     "hvd.alltoall collected wrong number of values")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_empty_gpu(self):
         """Test that the alltoall correctly deals with an empty input tensor."""
         # ncclGroupEnd failed: invalid usage
@@ -3349,7 +3352,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                                          [rk + 1 if rk != 1 else 0 for rk in range(size)],
                                          "hvd.alltoall returned incorrect received_splits")
 
-
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_one_rank_sends_nothing_gpu(self):
         """Test where one rank sends nothing in an alltoall."""
         # Only do this test if there are GPUs available.
@@ -3452,6 +3455,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                 self.assertSequenceEqual(self.evaluate(received_splits).tolist(), expected_rsplits,
                                          "hvd.alltoall returned incorrect received_splits")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_one_rank_receives_nothing_gpu(self):
         """Test where one rank receives nothing in an alltoall."""
         # ncclGroupEnd failed: invalid usage
@@ -3552,6 +3556,7 @@ class TensorFlowTests(BaseTensorFlowTests):
         self.assertSequenceEqual(self.evaluate(received_splits).tolist(), expected_rsplits,
                                  "hvd.alltoall returned incorrect received_splits")
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_zero_splits_gpu(self):
         """Test alltoall with some ranks not participating / splits set to zero."""
         # ncclCommInitRank failed: invalid usage
@@ -3723,6 +3728,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                             "gradient %s differs from expected %s, "
                             "error: %s" % (grad_out, expected, str(err)))
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_grad_gpu(self):
         """Test the correctness of the alltoall gradient on GPU."""
         # Only do this test if there are GPUs available.
@@ -3818,6 +3824,7 @@ class TensorFlowTests(BaseTensorFlowTests):
                             "gradient %s differs from expected %s, "
                             "error: %s" % (grad_out, expected, str(err)))
 
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_equal_split_grad_gpu(self):
         """Test the correctness of the alltoall gradient with default splitting on GPU."""
         # Only do this test if there are GPUs available.

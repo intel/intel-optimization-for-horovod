@@ -21,6 +21,16 @@ else()
     set(Tensorflow_CXX17 FALSE)
 endif()
 
+# SYCL compiles with Tensorflow NextPluggableDevice by default when tf/itex >= 2.15.
+if (HAVE_SYCL AND (Tensorflow_VERSION VERSION_GREATER_EQUAL "2.15"))
+    if ("$ENV{HOROVOD_WITHOUT_TFNPD}" STREQUAL "1" OR "$ENV{HOROVOD_WITH_TFPD}" STREQUAL "1")
+        message("Build Horovod Tensorflow Module that supports PluggableDevice.")
+    else()
+        message("Build Horovod Tensorflow Module that supports PluggableDevice and NextPluggableDevice.")
+        add_definitions(-DHAVE_TFNPD=1)
+    endif()
+endif()
+
 # Append version number into metadata
 file(APPEND "${CMAKE_LIBRARY_OUTPUT_DIRECTORY_ROOT}/metadata.json" "\"tensorflow\": \"${Tensorflow_VERSION}\",\n")
 

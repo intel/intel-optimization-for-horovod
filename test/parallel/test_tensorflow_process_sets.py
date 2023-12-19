@@ -10,6 +10,7 @@ from packaging import version
 import itertools
 import numpy as np
 import platform
+import pytest
 import tensorflow as tf
 from horovod.tensorflow.util import _executing_eagerly
 
@@ -762,7 +763,8 @@ class TensorFlowProcessSetsTests(BaseTensorFlowTests):
 
                 self.assertSequenceEqual(self.evaluate(received_splits).tolist(), [rk + 1 for rk in set_ranks],
                                          "hvd.alltoall returned incorrect received_splits")
-
+    
+    @pytest.mark.skip(reason="stock tensorflow has bug on alltoall int32 Op.")
     def test_horovod_alltoall_gpu_process_sets(self):
         """Test that the GPU alltoall on restricted process sets correctly distributes 1D, 2D, and 3D tensors."""
         if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
