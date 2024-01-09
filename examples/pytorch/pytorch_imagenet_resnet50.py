@@ -315,7 +315,7 @@ if __name__ == '__main__':
     if args.synthetic:
         if verbose: print("Synthetic data is used!")
         # limit dataset to maxiter
-        _size = 1281167 if not args.maxiter else allreduce_batch_size*args.maxiter*hvd.local_size()
+        _size = 1281167 if not args.maxiter else allreduce_batch_size*args.maxiter*hvd.size()
         train_dataset = datasets.FakeData(_size, (3, 224, 224), 1000,
                                  transform=transforms.Compose([
                                      transforms.RandomResizedCrop(224),
