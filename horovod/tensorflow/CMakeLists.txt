@@ -24,10 +24,12 @@ endif()
 # SYCL compiles with Tensorflow NextPluggableDevice by default when tf/itex >= 2.15.
 if (HAVE_SYCL AND (Tensorflow_VERSION VERSION_GREATER_EQUAL "2.15"))
     if ("$ENV{HOROVOD_WITHOUT_TFNPD}" STREQUAL "1" OR "$ENV{HOROVOD_WITH_TFPD}" STREQUAL "1")
+        set(HAVE_TFNPD FALSE)
         message("Build Horovod Tensorflow Module that supports PluggableDevice.")
     else()
-        message("Build Horovod Tensorflow Module that supports PluggableDevice and NextPluggableDevice.")
+        set(HAVE_TFNPD TRUE)
         add_definitions(-DHAVE_TFNPD=1)
+        message("Build Horovod Tensorflow Module that supports PluggableDevice and NextPluggableDevice.")
     endif()
 endif()
 
@@ -93,7 +95,7 @@ set(Tensorflow_CXX17 ${Tensorflow_CXX17} PARENT_SCOPE)
 
 # TF SOURCES
 list(APPEND TF_SOURCES "${PROJECT_SOURCE_DIR}/horovod/tensorflow/mpi_ops.cc")
-if(NOT USE_GPU_CCL)
+if(NOT HAVE_SYCL OR HAVE_TFNPD)
     list(APPEND TF_SOURCES "${PROJECT_SOURCE_DIR}/horovod/tensorflow/xla_mpi_ops.cc")
 endif()
 

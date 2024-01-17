@@ -665,7 +665,11 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   if (enable_xla_ops) {
     // Enable async completion when XLA ops are enabled. Sine the XLA runtime is
     // single-threaded, async completion is essential to reduce host overhead.
+#if !HAVE_SYCL
+    // TODO(intel): remove !HAVE_SYCL macro once oneccl supports async event destroy.
+    // See MLSL-2703.
     state.enable_async_completion = true;
+#endif
   }
 
   // Enable auto-tuning.

@@ -34,6 +34,23 @@
 #include "tensorflow/core/kernels/dense_update_functor.h"
 #include <dlfcn.h>
 
+std::string GetEnv(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr) {
+    return std::string();
+  }
+  return std::string(value);
+}
+
+bool UseTFNPD() {
+  static bool isItexNPDEnabled_ =
+      GetEnv("ITEX_ENABLE_NEXTPLUGGABLE_DEVICE") == "1" ? true : false;
+  static bool isXlaAutoJitEnabled_ =
+      static_cast<bool>(TF_GetXlaAutoJitEnabled());
+
+  return isItexNPDEnabled_ || isXlaAutoJitEnabled_;
+}
+
 static void LoadXpuLibrary() __attribute__((constructor));
 static void UnloadXpuLibrary() __attribute__((destructor));
 
@@ -52,13 +69,18 @@ static void* (*C_ITEXGetStreamFromPjRtDevice)(int device_id,
 static void* (*C_ITEXOpaqueDataPointerFromPjRtBuffer)(PJRT_Buffer*) = nullptr;
 static PJRT_Buffer* (*C_ITEXCreatePjRtBuffer)(int device_id, PjRtBuffer_Info*,
                                               PJRT_Client*) = nullptr;
+void (*C_RegisterCustomCallTarget)(const char* symbol, void* address,
+                                   const char* platform) = nullptr;
 
 void LoadXpuLibrary() {
+  if (!UseTFNPD())
+    return;
+
   libintel_xla_handle = dlopen("libintel_xla.so", RTLD_NOW | RTLD_LOCAL);
   if (!libintel_xla_handle) {
     const char* error_msg = dlerror();
     throw std::runtime_error(std::string(error_msg) +
-                             ". Horovod.Tensorflow module built with "
+                             ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX required package "
                              "intel_extension_for_tensorflow >= 2.15.0. Please "
                              "install proper version.");
@@ -70,7 +92,11 @@ void LoadXpuLibrary() {
   if (C_ITEXGetStreamFromPjRtDevice == nullptr) {
     const char* error_msg = dlerror();
     dlclose(libintel_xla_handle);
-    throw std::runtime_error(error_msg);
+    throw std::runtime_error(std::string(error_msg) +
+                             ". Horovod.TensorFlow module built with "
+                             "NextPluggableDevice for ITEX failed to load"
+                             "function 'C_ITEXGetStreamFromPjRtDevice' from"
+                             "libintel_xla.so.");
   }
 
   C_ITEXOpaqueDataPointerFromPjRtBuffer =
@@ -79,7 +105,12 @@ void LoadXpuLibrary() {
   if (C_ITEXOpaqueDataPointerFromPjRtBuffer == nullptr) {
     const char* error_msg = dlerror();
     dlclose(libintel_xla_handle);
-    throw std::runtime_error(error_msg);
+    throw std::runtime_error(
+        std::string(error_msg) +
+        ". Horovod.TensorFlow module built with "
+        "NextPluggableDevice for ITEX failed to load"
+        "function 'C_ITEXOpaqueDataPointerFromPjRtBuffer' from"
+        "libintel_xla.so.");
   }
 
   C_ITEXCreatePjRtBuffer = reinterpret_cast<decltype(C_ITEXCreatePjRtBuffer)>(
@@ -87,7 +118,24 @@ void LoadXpuLibrary() {
   if (C_ITEXCreatePjRtBuffer == nullptr) {
     const char* error_msg = dlerror();
     dlclose(libintel_xla_handle);
-    throw std::runtime_error(error_msg);
+    throw std::runtime_error(std::string(error_msg) +
+                             ". Horovod.TensorFlow module built with "
+                             "NextPluggableDevice for ITEX failed to load"
+                             "function 'C_ITEXCreatePjRtBuffer' from"
+                             "libintel_xla.so.");
+  }
+
+  C_RegisterCustomCallTarget =
+      reinterpret_cast<decltype(C_RegisterCustomCallTarget)>(
+          dlsym(libintel_xla_handle, "C_RegisterCustomCallTarget"));
+  if (C_RegisterCustomCallTarget == nullptr) {
+    const char* error_msg = dlerror();
+    dlclose(libintel_xla_handle);
+    throw std::runtime_error(std::string(error_msg) +
+                             ". Horovod.TensorFlow module built with "
+                             "NextPluggableDevice for ITEX failed to load"
+                             "function 'C_RegisterCustomCallTarget' from"
+                             "libintel_xla.so.");
   }
 }
 
@@ -95,23 +143,6 @@ void UnloadXpuLibrary() {
   if (libintel_xla_handle) {
     dlclose(libintel_xla_handle);
   }
-}
-
-std::string GetEnv(const char* name) {
-  const char* value = std::getenv(name);
-  if (value == nullptr) {
-    return std::string();
-  }
-  return std::string(value);
-}
-
-bool UseTFNPD() {
-  static bool isItexNPDEnabled_ =
-      GetEnv("ITEX_ENABLE_NEXTPLUGGABLE_DEVICE") == "1" ? true : false;
-  static bool isXlaAutoJitEnabled_ =
-      static_cast<bool>(TF_GetXlaAutoJitEnabled());
-
-  return isItexNPDEnabled_ || isXlaAutoJitEnabled_;
 }
 
 bool pointer_is_pjrt_tensor(TF_Tensor* tf_tensor) {

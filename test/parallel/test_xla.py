@@ -49,8 +49,11 @@ if hasattr(tf, 'ConfigProto'):
 if hasattr(tf, 'config') and hasattr(tf.config, 'experimental') \
         and hasattr(tf.config.experimental, 'set_memory_growth'):
     gpus = tf.config.experimental.list_physical_devices('GPU')
+    if not gpus:
+        gpus = tf.config.experimental.list_physical_devices('XPU')
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
+    cpus = tf.config.experimental.list_physical_devices('CPU')
 else:
     # Specifies the config to use with eager execution. Does not preclude
     # tests from running in the graph mode.
@@ -71,7 +74,10 @@ class XLATests(tf.test.TestCase):
     def __init__(self, *args, **kwargs):
         super(XLATests, self).__init__(*args, **kwargs)
         warnings.simplefilter('module')
-
+        if hvd.sycl_built():
+            hvd.init()
+            tf.config.set_visible_devices([gpus[hvd.local_rank()]] + cpus)
+        
     def evaluate(self, tensors):
         if _executing_eagerly():
             return self._eval_helper(tensors)
@@ -98,7 +104,7 @@ class XLATests(tf.test.TestCase):
     def test_horovod_allreduce_gpu(self):
         """Test that the allreduce works on XLA/GPUs."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -122,7 +128,7 @@ class XLATests(tf.test.TestCase):
         dtypes = [tf.uint8, tf.int8, tf.int32, tf.int64, tf.float32, tf.float16, tf.float64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/xpu:%d" % 0):
                 max_difference = tf.function(
                     hvd_allreduce_test, jit_compile=True)(self, dtype, dim)
 
@@ -148,7 +154,7 @@ class XLATests(tf.test.TestCase):
            with prescaling"""
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             return
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -183,7 +189,7 @@ class XLATests(tf.test.TestCase):
         int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%s" % local_rank):
+            with tf.device("/xpu:%s" % 0):
                 max_difference = tf.function(
                     hvd_allreduce_test, jit_compile=True)(self, dtype, dim)
 
@@ -207,7 +213,7 @@ class XLATests(tf.test.TestCase):
            with postscaling"""
 
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             return
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -243,7 +249,7 @@ class XLATests(tf.test.TestCase):
         int_types = [tf.uint8, tf.int8, tf.int32, tf.int64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%s" % local_rank):
+            with tf.device("/xpu:%s" % 0):
                 max_difference = tf.function(
                     hvd_allreduce_test, jit_compile=True)(self, dtype, dim)
 
@@ -265,7 +271,7 @@ class XLATests(tf.test.TestCase):
     def test_horovod_allreduce_grad_gpu(self):
         """Test the correctness of the allreduce gradient on XLA/GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -289,7 +295,7 @@ class XLATests(tf.test.TestCase):
         dtypes = [tf.float32, tf.float64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/xpu:%d" % 0):
                 grad = tf.function(allreduce_grad_test,
                                    jit_compile=True)(self, dtype, dim)
                 grad_out = self.evaluate(grad)
@@ -302,7 +308,7 @@ class XLATests(tf.test.TestCase):
     def test_horovod_allreduce_average_grad_gpu(self):
         """Test the correctness of the allreduce with average gradient on XLA/GPU."""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest(("No GPUs available"))
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -326,7 +332,7 @@ class XLATests(tf.test.TestCase):
         dtypes = [tf.float32, tf.float64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/xpu:%d" % 0):
                 grad = tf.function(allreduce_grad_test,
                                    jit_compile=True)(self, dtype, dim)
                 grad_out = self.evaluate(grad)

@@ -78,7 +78,7 @@ class XLAProcessSetsTests(BaseTensorFlowTests):
     def test_horovod_allreduce_gpu_process_sets(self):
         """ Test on XLA/GPU that allreduce correctly sums if restricted to non-global process sets"""
         # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
+        if not hvd.sycl_built() and not tf.test.is_gpu_available(cuda_only=True):
             self.skipTest("No GPUs available")
 
         if int(os.environ.get('HOROVOD_MIXED_INSTALL', 0)):
@@ -88,6 +88,9 @@ class XLAProcessSetsTests(BaseTensorFlowTests):
         local_rank = hvd.local_rank()
         rank = hvd.rank()
         size = hvd.size()
+
+        if hvd.sycl_built():
+            tf.config.set_visible_devices([gpus[hvd.local_rank()]] + cpus)
 
         def allreduce_gpu_process_set(self, dtype, dim):
             even_rank_tensor = self.random_uniform([17] * dim, -100, 100)
@@ -112,7 +115,7 @@ class XLAProcessSetsTests(BaseTensorFlowTests):
         dtypes = [tf.uint8, tf.int8, tf.int32, tf.int64, tf.float16, tf.float32, tf.float64]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
-            with tf.device("/gpu:%d" % local_rank):
+            with tf.device("/xpu:%d" % 0):
                 max_difference = tf.function(
                     allreduce_gpu_process_set, jit_compile=True)(self, dtype, dim)
 

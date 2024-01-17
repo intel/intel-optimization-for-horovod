@@ -39,6 +39,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+using gpuStream_raw_t = gpuStream_t;
 
 #define CUDA_CALL(func)                                                        \
   {                                                                            \
@@ -54,6 +55,18 @@
 #elif HAVE_ROCM
 
 #include <hip/hip_runtime.h>
+using gpuStream_raw_t = gpuStream_t;
+
+#define OMPI_SKIP_MPICXX
+#include "../common/operations.h"
+#include "../common/utils/env_parser.h"
+#include "./custom_call_config_generated.h"
+
+#elif HAVE_SYCL
+using gpuStream_raw_t = sycl::queue*;
+bool UseTFNPD();
+extern void (*C_RegisterCustomCallTarget)(const char* symbol, void* address,
+                                          const char* platform);
 
 #define OMPI_SKIP_MPICXX
 #include "../common/operations.h"
@@ -346,7 +359,7 @@ public:
   // outstanding `Wait` call due to its blocking nature to simplify the
   // implementation. Consequently, this method always operates on the very
   // first item in the queue.
-  void Wait(string tensor_name, gpuStream_t stream) {
+  void Wait(string tensor_name, gpuStream_raw_t stream) {
     uint64 key_hash = GetRendezvousKeyHash(tensor_name);
 
     {
@@ -386,6 +399,8 @@ public:
       CUDA_CALL(cudaStreamWaitEvent(stream, *event, /*flags=*/0));
 #elif HAVE_ROCM
       HVD_GPU_CHECK(hipStreamWaitEvent(stream, *event, /*flags=*/0));
+#elif HAVE_SYCL
+      stream->ext_oneapi_submit_barrier({*event});
 #endif
     }
     delete payload;
@@ -418,7 +433,7 @@ private:
 
 class XLAReadyEvent : public common::ReadyEvent {
 public:
-  XLAReadyEvent(gpuStream_t stream) : stream_(stream) {
+  XLAReadyEvent(gpuStream_raw_t stream) : stream_(stream) {
 #if HAVE_CUDA
     CUDA_CALL(cudaEventCreate(&event_));
     CUDA_CALL(cudaEventRecord(event_, stream));
@@ -429,16 +444,30 @@ public:
     HVD_GPU_CHECK(hipEventRecord(event_, stream));
   }
   ~XLAReadyEvent() { HVD_GPU_CHECK(hipEventDestroy(event_)); }
+#elif HAVE_SYCL
+    if (stream_)
+      event_ = stream_->ext_oneapi_submit_barrier();
+    else
+      throw std::runtime_error(
+          "Horovod receives a nullptr as SYCL stream when getting "
+          "XLAReadyEvent");
+  }
+  ~XLAReadyEvent() {}
 #endif
 
   bool Ready() const override {
+#if HAVE_SYCL
+    return event_.get_info<sycl::info::event::command_execution_status>() ==
+           sycl::info::event_command_status::complete;
+#else
     gpuError_t result = gpuEventQuery(event_);
     return gpuErrorNotReady != result;
+#endif
   }
   gpuEvent_t event() const override { return event_; }
 
 private:
-  gpuStream_t stream_; // Not Owned.
+  gpuStream_raw_t stream_; // Not Owned.
   gpuEvent_t event_;   // Owned.
 };
 
@@ -462,7 +491,8 @@ protected:
 
 class XLAOpContext : public common::OpContext {
 public:
-  XLAOpContext(int device) : device_(device) {}
+  XLAOpContext(int device, gpuStream_raw_t stream)
+      : device_(device), stream_(stream) {}
 
   virtual common::Status AllocatePersistent(
       int64_t size, std::shared_ptr<common::PersistentBuffer>* tensor) override;
@@ -480,23 +510,35 @@ public:
     return common::Framework::XLA;
   }
 
+#if HAVE_SYCL
+  sycl::queue SYCLQueue() const override {
+    if (!stream_)
+      throw std::runtime_error("Horovod receives a nullptr as SYCL stream"
+                               " in XLAOpContext.");
+    return *stream_;
+  }
+#endif
+
 private:
   int device_;
+  gpuStream_raw_t stream_;
 };
 
 class XLAPersistentBuffer : public common::PersistentBuffer {
 public:
-  XLAPersistentBuffer(int device, int64_t size);
+  XLAPersistentBuffer(int device, gpuStream_raw_t stream, int64_t size);
   virtual const void*
   AccessData(std::shared_ptr<common::OpContext> context) const override;
 
 private:
   int device_;
+  gpuStream_raw_t stream_;
   void* buffer_;
 };
 
-XLAPersistentBuffer::XLAPersistentBuffer(int device, int64_t size)
-    : device_(device) {
+XLAPersistentBuffer::XLAPersistentBuffer(int device, gpuStream_raw_t stream,
+                                         int64_t size)
+    : device_(device), stream_(stream) {
   int restore_device;
 #if HAVE_CUDA
   CUDA_CALL(cudaGetDevice(&restore_device));
@@ -510,6 +552,13 @@ XLAPersistentBuffer::XLAPersistentBuffer(int device, int64_t size)
   // Simply call hipMalloc for persistent buffer.
   HVD_GPU_CHECK(hipMalloc((void**)&buffer_, size));
   HVD_GPU_CHECK(hipSetDevice(restore_device));
+#elif HAVE_SYCL
+  buffer_ = sycl::aligned_alloc_device(/*size_t alignment*/ 64,
+                                       /*size_t numBytes*/ size,
+                                       /*const queue& syclQueue*/ *stream_);
+  if (!buffer_)
+    throw std::runtime_error("Horovod::XLAPersistentBuffer meets error when "
+                             "allocating SYCL device memory.");
 #endif
 }
 
@@ -520,7 +569,7 @@ const void* XLAPersistentBuffer::AccessData(
 
 common::Status XLAOpContext::AllocatePersistent(
     int64_t size, std::shared_ptr<common::PersistentBuffer>* tensor) {
-  *tensor = std::make_shared<XLAPersistentBuffer>(device_, size);
+  *tensor = std::make_shared<XLAPersistentBuffer>(device_, stream_, size);
   return common::Status::OK();
 }
 
@@ -541,23 +590,34 @@ XLAOpContext::AllocateZeros(int64_t num_elements, common::DataType dtype,
       "AllocateZeros is not supported for XLA.");
 }
 
-common::ReadyEvent* RecordReadyEvent(gpuStream_t stream) {
+common::ReadyEvent* RecordReadyEvent(gpuStream_raw_t stream) {
   return new XLAReadyEvent(stream);
 }
 
-int GetDeviceOrdinal(void* ptr) {
-  gpuPointerAttribute_t attrs;
+int GetDeviceOrdinal(void* ptr, gpuStream_raw_t stream) {
 #if HAVE_CUDA
+  gpuPointerAttribute_t attrs;
   CUDA_CALL(cudaPointerGetAttributes(&attrs, ptr));
-#elif HAVE_ROCM
-  HVD_GPU_CHECK(hipPointerGetAttributes(&attrs, ptr));
-#endif
   return attrs.device;
+#elif HAVE_ROCM
+  gpuPointerAttribute_t attrs;
+  HVD_GPU_CHECK(hipPointerGetAttributes(&attrs, ptr));
+  return attrs.device;
+#elif HAVE_SYCL
+  auto device = stream->get_device();
+  auto devices = stream->get_context().get_devices();
+  for (int i = 0; i < devices.size(); ++i) {
+    if (device == devices[i])
+      return i;
+  }
+  throw std::runtime_error(
+      "Horovod can't find sycl::device from given XLA stream.");
+#endif
 }
 
 // Implements for the `HVDAllreduce` HLO CustomCall.
-void CallbackHVDAllreduce(gpuStream_t stream, void** buffers, const char* opaque,
-                          size_t opaque_len) {
+void CallbackHVDAllreduce(gpuStream_raw_t stream, void** buffers,
+                          const char* opaque, size_t opaque_len) {
   CHECK(common::CheckInitialized().ok());
   CustomCallConfig config;
   config.ParseFromString(std::string(opaque, opaque_len));
@@ -566,8 +626,8 @@ void CallbackHVDAllreduce(gpuStream_t stream, void** buffers, const char* opaque
   common::ReadyEventList ready_event_list;
   ready_event_list.AddReadyEvent(
       std::shared_ptr<common::ReadyEvent>(RecordReadyEvent(stream)));
-  int dev_ordinal = GetDeviceOrdinal(buffers[0]);
-  auto hvd_context = std::make_shared<XLAOpContext>(dev_ordinal);
+  int dev_ordinal = GetDeviceOrdinal(buffers[0], stream);
+  auto hvd_context = std::make_shared<XLAOpContext>(dev_ordinal, stream);
   auto hvd_input = std::make_shared<XLATensor>(
       config.tensor_type_, common::TensorShape(config.input_shapes_[0]),
       buffers[0]);
@@ -589,7 +649,7 @@ void CallbackHVDAllreduce(gpuStream_t stream, void** buffers, const char* opaque
 }
 
 // Implements for the `HVDAllreduceDone` HLO CustomCall.
-void CallbackHVDAllreduceDone(gpuStream_t stream, void** /*buffers*/,
+void CallbackHVDAllreduceDone(gpuStream_raw_t stream, void** /*buffers*/,
                               const char* opaque, size_t opaque_len) {
   // Blocking until the request is done processing by the Horovod runtime.
   VLOG(2) << "hvd-allreduce-done - Start";
@@ -599,16 +659,49 @@ void CallbackHVDAllreduceDone(gpuStream_t stream, void** /*buffers*/,
   VLOG(2) << "hvd-allreduce-done - End";
 }
 
+#if HAVE_SYCL
+class RegisterCustomCallTarget {
+public:
+  explicit RegisterCustomCallTarget(const std::string& name, void* address,
+                                    const std::string& platform) {
+    if (UseTFNPD()) {
+      if (!C_RegisterCustomCallTarget)
+        throw std::runtime_error(
+            "Horovod XLA's C_RegisterCustomCallTarget is nullptr!");
+      C_RegisterCustomCallTarget(name.c_str(), address, platform.c_str());
+    }
+  }
+};
+
+#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM_HELPER(symbol, address,   \
+                                                            platform, counter) \
+  static RegisterCustomCallTarget XLA_REGISTER_CUSTOM_CALL_CONCAT(             \
+      custom_call_target_register,                                             \
+      counter)(symbol, reinterpret_cast<void*>(address), platform);
+
+#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(symbol, address,          \
+                                                     platform)                 \
+  SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM_HELPER(symbol, address,         \
+                                                      platform, __COUNTER__)
+
+#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET(function, platform)                \
+  SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(#function, function, platform)
+
+#endif
+
 #if HAVE_CUDA
 XLA_REGISTER_CUSTOM_CALL_TARGET(CallbackHVDAllreduce, "CUDA");
 XLA_REGISTER_CUSTOM_CALL_TARGET(CallbackHVDAllreduceDone, "CUDA");
 #elif HAVE_ROCM
 XLA_REGISTER_CUSTOM_CALL_TARGET(CallbackHVDAllreduce, "ROCM");
 XLA_REGISTER_CUSTOM_CALL_TARGET(CallbackHVDAllreduceDone, "ROCM");
+#elif HAVE_SYCL
+SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET(CallbackHVDAllreduce, "SYCL");
+SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET(CallbackHVDAllreduceDone, "SYCL");
 #endif
 
 } // namespace
-} // namespace tensorflow
+} // namespace xla
 } // namespace horovod
 
 #endif // HAVE_GPU
