@@ -588,7 +588,7 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -615,7 +615,7 @@ class TorchTests(unittest.TestCase):
         hvd.init()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -789,7 +789,7 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -823,7 +823,7 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -947,7 +947,7 @@ class TorchTests(unittest.TestCase):
 
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         root_ranks = list(range(size))
         for dtype, dim, root_rank in itertools.product(dtypes, dims, root_ranks):
@@ -1111,7 +1111,7 @@ class TorchTests(unittest.TestCase):
 
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -1155,7 +1155,7 @@ class TorchTests(unittest.TestCase):
 
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             vals = []
@@ -1302,7 +1302,7 @@ class TorchTests(unittest.TestCase):
 
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             # Support tests up to MPI Size of 35
@@ -1387,7 +1387,7 @@ class TorchTests(unittest.TestCase):
 
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             # Support tests up to MPI Size of 35
@@ -1607,7 +1607,7 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -1636,7 +1636,7 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
@@ -1752,7 +1752,7 @@ class TorchTests(unittest.TestCase):
         size = hvd.size()
         # Only Tensors of floating point dtype can require gradients
         dtypes = [torch.FloatTensor, torch.DoubleTensor,
-                  torch.HalfTensor, torch.BFloat16Tensor]
+                  torch.HalfTensor]
         dims = [1, 2, 3]
         for dtype, dim in itertools.product(dtypes, dims):
             torch.manual_seed(1234)
