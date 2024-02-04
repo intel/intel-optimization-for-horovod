@@ -18,7 +18,7 @@ Install Intel GPU driver
 Refer to `Installation Guides <https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series>`__
 for latest driver installation. 
 
-Recommend to install verified driver version `602 <https://dgpu-docs.intel.com/releases/stable_602_20230323.html>`__ for hardware platforms: 
+Recommend to install verified driver version `803 <https://dgpu-docs.intel.com/releases/LTS_803.29_20240131.html>`__ for hardware platforms: 
 Intel® Data Center GPU Max Series and Intel® Data Center GPU Flex Series 170.
 
 
@@ -51,7 +51,7 @@ Install Deep Learning Frameworks
 
 To bring Intel GPU devices into **TensorFlow** community for AI workload acceleration, Intel promoted a new user visible ``XPU`` device type as a device abstraction for Intel computation architectures and implemented corresponding device runtime in **Intel® Extension for TensorFlow**.
 
-To use **TensorFlow** and **Intel® Extension for TensorFlow**, please follow `Tensorflow 2.12.0 installation <https://www.tensorflow.org/install>`__  and `Intel® Extension for TensorFlow* 1.2 installation <https://github.com/intel/intel-extension-for-tensorflow/tree/r1.2#install>`__.
+To use **TensorFlow** and **Intel® Extension for TensorFlow**, please follow `Tensorflow 2.14.0 installation <https://www.tensorflow.org/install>`__  and `Intel® Extension for TensorFlow* 2.14 installation <https://github.com/intel/intel-extension-for-tensorflow/tree/r2.14#install>`__.
 
 Install the Horovod pip package
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

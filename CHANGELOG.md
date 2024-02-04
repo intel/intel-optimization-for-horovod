@@ -20,7 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+<<<<<<< HEAD
 - Changed driver version.
+=======
+- Updated driver version to LTS-803.
+>>>>>>> 71405d1 (update document for r0.28.1.3 (#279))
 
 ## [0.28.1.2] - YYYY-MM-DD
 
