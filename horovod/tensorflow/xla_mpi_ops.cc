@@ -19,7 +19,6 @@
 #include <thread>
 #include <unordered_map>
 
-
 #if TENSORFLOW_VERSION >= 2006000000
 
 #include "tensorflow/compiler/tf2xla/xla_op_kernel.h"
@@ -64,7 +63,7 @@ using gpuStream_raw_t = gpuStream_t;
 
 #elif HAVE_SYCL
 using gpuStream_raw_t = sycl::queue*;
-bool UseTFNPD();
+bool IsXlaAutoJitEnabled();
 extern void (*C_RegisterCustomCallTarget)(const char* symbol, void* address,
                                           const char* platform);
 
@@ -266,7 +265,7 @@ private:
 #define HVD_REGISTER_XLA_OP_UNIQ(CTR, OP_NAME, OP)                             \
   static HVDXlaOpRegistrar xla_op_registrar__body__##CTR##__object(            \
       OP_NAME, [](::tensorflow::OpKernelConstruction* context)                 \
-                   -> ::tensorflow::OpKernel* { return new OP(context); });
+          -> ::tensorflow::OpKernel* { return new OP(context); });
 
 class HVDXlaOpRegistrar {
 public:
@@ -664,7 +663,7 @@ class RegisterCustomCallTarget {
 public:
   explicit RegisterCustomCallTarget(const std::string& name, void* address,
                                     const std::string& platform) {
-    if (UseTFNPD()) {
+    if (IsXlaAutoJitEnabled()) {
       if (!C_RegisterCustomCallTarget)
         throw std::runtime_error(
             "Horovod XLA's C_RegisterCustomCallTarget is nullptr!");
@@ -673,18 +672,18 @@ public:
   }
 };
 
-#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM_HELPER(symbol, address,   \
-                                                            platform, counter) \
+#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM_HELPER(                  \
+    symbol, address, platform, counter)                                        \
   static RegisterCustomCallTarget XLA_REGISTER_CUSTOM_CALL_CONCAT(             \
       custom_call_target_register,                                             \
       counter)(symbol, reinterpret_cast<void*>(address), platform);
 
-#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(symbol, address,          \
-                                                     platform)                 \
-  SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM_HELPER(symbol, address,         \
-                                                      platform, __COUNTER__)
+#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(symbol, address,         \
+                                                      platform)                \
+  SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM_HELPER(symbol, address,        \
+                                                       platform, __COUNTER__)
 
-#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET(function, platform)                \
+#define SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET(function, platform)               \
   SYCL_XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(#function, function, platform)
 
 #endif

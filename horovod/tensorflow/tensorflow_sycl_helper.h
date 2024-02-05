@@ -42,11 +42,17 @@ std::string GetEnv(const char* name) {
   return std::string(value);
 }
 
+bool IsXlaAutoJitEnabled() {
+  static bool isXlaAutoJitEnabled_ =
+      static_cast<bool>(TF_GetXlaAutoJitEnabled());
+
+  return isXlaAutoJitEnabled_;
+}
+
 bool UseTFNPD() {
   static bool isItexNPDEnabled_ =
       GetEnv("ITEX_ENABLE_NEXTPLUGGABLE_DEVICE") == "1" ? true : false;
-  static bool isXlaAutoJitEnabled_ =
-      static_cast<bool>(TF_GetXlaAutoJitEnabled());
+  static bool isXlaAutoJitEnabled_ = IsXlaAutoJitEnabled();
 
   return isItexNPDEnabled_ || isXlaAutoJitEnabled_;
 }
@@ -58,6 +64,7 @@ constexpr uintptr_t kTag = 0x1ULL;
 typedef struct PJRT_Client PJRT_Client;
 typedef struct PJRT_Buffer PJRT_Buffer;
 struct PjRtBuffer_Info {
+  size_t size;
   std::string datatype;
   std::vector<int64_t> dimensions;
   std::vector<int64_t> layout;
@@ -69,6 +76,8 @@ static void* (*C_ITEXGetStreamFromPjRtDevice)(int device_id,
 static void* (*C_ITEXOpaqueDataPointerFromPjRtBuffer)(PJRT_Buffer*) = nullptr;
 static PJRT_Buffer* (*C_ITEXCreatePjRtBuffer)(int device_id, PjRtBuffer_Info*,
                                               PJRT_Client*) = nullptr;
+static PJRT_Buffer* (*C_ITEXCreateSEPjRtBuffer)(int device_id, PjRtBuffer_Info*,
+                                                PJRT_Client*) = nullptr;
 void (*C_RegisterCustomCallTarget)(const char* symbol, void* address,
                                    const char* platform) = nullptr;
 
@@ -122,6 +131,19 @@ void LoadXpuLibrary() {
                              ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX failed to load"
                              "function 'C_ITEXCreatePjRtBuffer' from"
+                             "libintel_xla.so.");
+  }
+
+  C_ITEXCreateSEPjRtBuffer =
+      reinterpret_cast<decltype(C_ITEXCreateSEPjRtBuffer)>(
+          dlsym(libintel_xla_handle, "C_ITEXCreateSEPjRtBuffer"));
+  if (C_ITEXCreateSEPjRtBuffer == nullptr) {
+    const char* error_msg = dlerror();
+    dlclose(libintel_xla_handle);
+    throw std::runtime_error(std::string(error_msg) +
+                             ". Horovod.TensorFlow module built with "
+                             "NextPluggableDevice for ITEX failed to load"
+                             "function 'C_ITEXCreateSEPjRtBuffer' from"
                              "libintel_xla.so.");
   }
 
@@ -192,21 +214,30 @@ npd_allocate_temp(OpKernelContext* context, DataType type,
 
     int rank = shape.dims();
     std::vector<int64_t> dimensions(rank);
-    std::vector<int64_t> layout(rank);
     for (int d = 0; d < rank; ++d) {
       dimensions[d] = shape.dim_size(d);
     }
-    std::iota(layout.rbegin(), layout.rend(), 0);
 
     PjRtBuffer_Info pjrt_buffer_info;
     pjrt_buffer_info.datatype = DataTypeString(type);
     pjrt_buffer_info.dimensions = dimensions;
-    pjrt_buffer_info.layout = layout;
 
-    TF_CreatePjRtBuffer(
-        tmp,
-        C_ITEXCreatePjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
-        "XPU", status);
+    if (IsXlaAutoJitEnabled()) {
+      std::vector<int64_t> layout(rank);
+      std::iota(layout.rbegin(), layout.rend(), 0);
+      pjrt_buffer_info.layout = std::move(layout);
+      TF_CreatePjRtBuffer(
+          tmp,
+          C_ITEXCreateSEPjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
+          "XPU", status);
+    } else {
+      size_t size = shape.num_elements() * DataTypeSize(type);
+      pjrt_buffer_info.size = size;
+      TF_CreatePjRtBuffer(
+          tmp,
+          C_ITEXCreatePjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
+          "XPU", status);
+    }
   }
 
   Status cast_status = TF_TensorToTensor(tmp, out_temp);
@@ -239,21 +270,30 @@ Status npd_allocate_output(OpKernelContext* context, int index,
     PJRT_Client* pjrt_c_client = TF_GetPjRtCClient("XPU", status);
     int rank = shape.dims();
     std::vector<int64_t> dimensions(rank);
-    std::vector<int64_t> layout(rank);
     for (int d = 0; d < rank; ++d) {
       dimensions[d] = shape.dim_size(d);
     }
-    std::iota(layout.rbegin(), layout.rend(), 0);
 
     PjRtBuffer_Info pjrt_buffer_info;
     pjrt_buffer_info.datatype = DataTypeString(out_type);
     pjrt_buffer_info.dimensions = dimensions;
-    pjrt_buffer_info.layout = layout;
 
-    TF_CreatePjRtBuffer(
-        output,
-        C_ITEXCreatePjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
-        "XPU", status);
+    if (IsXlaAutoJitEnabled()) {
+      std::vector<int64_t> layout(rank);
+      std::iota(layout.rbegin(), layout.rend(), 0);
+      pjrt_buffer_info.layout = std::move(layout);
+      TF_CreatePjRtBuffer(
+          output,
+          C_ITEXCreateSEPjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
+          "XPU", status);
+    } else {
+      size_t size = shape.num_elements() * DataTypeSize(out_type);
+      pjrt_buffer_info.size = size;
+      TF_CreatePjRtBuffer(
+          output,
+          C_ITEXCreatePjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
+          "XPU", status);
+    }
   }
 
   *tensor = context->mutable_output(index);
@@ -360,21 +400,30 @@ void NpdDenseAssignWrapper(TF_OpKernelContext* tf_ctx, TF_Tensor* tf_source,
 
       int rank = dest.shape().dims();
       std::vector<int64_t> dimensions(rank);
-      std::vector<int64_t> layout(rank);
       for (int d = 0; d < rank; ++d) {
         dimensions[d] = dest.shape().dim_size(d);
       }
-      std::iota(layout.rbegin(), layout.rend(), 0);
 
       PjRtBuffer_Info pjrt_buffer_info;
       pjrt_buffer_info.datatype = DataTypeString(dest.dtype());
       pjrt_buffer_info.dimensions = dimensions;
-      pjrt_buffer_info.layout = layout;
 
-      TF_CreatePjRtBuffer(
-          tf_dest,
-          C_ITEXCreatePjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
-          "XPU", tf_status);
+      if (IsXlaAutoJitEnabled()) {
+        std::vector<int64_t> layout(rank);
+        std::iota(layout.rbegin(), layout.rend(), 0);
+        pjrt_buffer_info.layout = std::move(layout);
+        TF_CreatePjRtBuffer(tf_dest,
+                            C_ITEXCreateSEPjRtBuffer(
+                                device_id, &pjrt_buffer_info, pjrt_c_client),
+                            "XPU", tf_status);
+      } else {
+        size_t size = dest.shape().num_elements() * DataTypeSize(dest.dtype());
+        pjrt_buffer_info.size = size;
+        TF_CreatePjRtBuffer(
+            tf_dest,
+            C_ITEXCreatePjRtBuffer(device_id, &pjrt_buffer_info, pjrt_c_client),
+            "XPU", tf_status);
+      }
 
       TF_DeleteStatus(tf_status);
     }
