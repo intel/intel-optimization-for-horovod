@@ -100,7 +100,7 @@ def train(epoch):
               desc='Train Epoch     #{}'.format(epoch + 1),
               disable=not verbose) as t:
         end = _time()
-        for batch_idx, (data, target) in train_loaders[epoch]:
+        for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(epoch, batch_idx)
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
@@ -137,7 +137,6 @@ def train(epoch):
                            'accuracy': 100. * train_accuracy.avg.item()})
                 t.update(1)
             if args.maxiter and (batch_idx+1) >= args.maxiter: break
-    if args.maxiter: train_loaders[epoch] = None
 
     if args.tensorboard:
         reduce_loss = train_loss.reduce()
@@ -156,7 +155,7 @@ def validate(epoch):
               desc='Validate Epoch  #{}'.format(epoch + 1),
               disable=not verbose) as t:
         with torch.no_grad():
-            for batch_idx, (data, target) in val_loaders[epoch]:
+            for batch_idx, (data, target) in enumerate(val_loader):
                 if args.cuda:
                     data, target = data.cuda(), target.cuda()
                 if args.xpu:
@@ -170,7 +169,6 @@ def validate(epoch):
                                'accuracy': 100. * val_accuracy.avg.item()})
                 t.update(1)
                 if args.maxiter and (batch_idx+1) >= args.maxiter: break
-    if args.maxiter: val_loaders[epoch] = None
 
     if args.tensorboard:
         reduce_loss = val_loss.reduce()
@@ -358,13 +356,11 @@ if __name__ == '__main__':
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=allreduce_batch_size,
         sampler=train_sampler, **kwargs)
-    train_loaders = [enumerate(train_loader) for _ in range(args.epochs)]
 
     val_sampler = torch.utils.data.distributed.DistributedSampler(
         val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size,
                                              sampler=val_sampler, **kwargs)
-    val_loaders = [enumerate(val_loader)]
 
 
     # Set up standard ResNet-50 model.
