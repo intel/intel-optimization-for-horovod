@@ -16,6 +16,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+## [0.28.1.4] - YYYY-MM-DD
+
+### Added
+
+- Supported async wait for ccl::event.
+- Supported TensorFlow NextPluggableDevice for Intel GPU device.
+- Enabled TensorFlow AllReduceXLAOp for Intel GPU device.
+
+### Changed
+
+- Skipped Pytorch AllReduce bf16 grad UT when rank > 2 for accuracy issue.
+
 ## [0.28.1.3] - YYYY-MM-DD
 
 ### Changed
