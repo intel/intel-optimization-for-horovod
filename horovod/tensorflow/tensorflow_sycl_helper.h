@@ -34,12 +34,14 @@
 #include "tensorflow/core/kernels/dense_update_functor.h"
 #include <dlfcn.h>
 
-std::string GetEnv(const char* name) {
-  const char* value = std::getenv(name);
-  if (value == nullptr) {
-    return std::string();
+bool IsItexNpdEnabled() {
+  bool result = true;
+  const char* env = std::getenv("ITEX_ENABLE_NEXTPLUGGABLE_DEVICE");
+  if (env) {
+    std::string env_value = absl::AsciiStrToLower(env);
+    result = (env_value == "1" || env_value == "true") ? true : false;
   }
-  return std::string(value);
+  return result;
 }
 
 bool IsXlaAutoJitEnabled() {
@@ -50,8 +52,7 @@ bool IsXlaAutoJitEnabled() {
 }
 
 bool UseTFNPD() {
-  static bool isItexNPDEnabled_ =
-      GetEnv("ITEX_ENABLE_NEXTPLUGGABLE_DEVICE") == "1" ? true : false;
+  static bool isItexNPDEnabled_ = IsItexNpdEnabled();
   static bool isXlaAutoJitEnabled_ = IsXlaAutoJitEnabled();
 
   return isItexNPDEnabled_ || isXlaAutoJitEnabled_;
