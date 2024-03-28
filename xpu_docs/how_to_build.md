@@ -20,9 +20,9 @@ Need to install components of Intel® oneAPI Base Toolkit:
 - Intel® oneAPI MPI Library (IntelMPI)
 
 ```bash
-$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/20f4e6a1-6b0b-4752-b8c1-e5eacba10e01/l_BaseKit_p_2024.0.0.49564.sh
+$ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/fdc7a2bc-b7a8-47eb-8876-de6201297144/l_BaseKit_p_2024.1.0.596.sh
 # 3 components are necessary: DPC++/C++ Compiler with DPC++ Libiary, oneMKL and oneCCL(IntelMPI will be installed automatically as oneCCL's dependency).
-$ sudo sh ./l_BaseKit_p_2024.0.0.49564.sh
+$ sudo sh ./l_BaseKit_p_2024.1.0.596.sh
 ```
 
 For any more details, please follow the procedure in https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html.
@@ -44,7 +44,7 @@ source /path to basekit/intel/oneapi/ccl/latest/env/vars.sh
 Intel® Optimization for Horovod* depends on TensorFlow* to build from source.
 
 ```bash
-$ pip install tensorflow==2.14.0
+$ pip install tensorflow==2.15.0
 
 ```
 
@@ -82,20 +82,18 @@ If you want to change code locally and build from source:
 - Option 1: build and install from source code package
 
 ```bash
-# will get a package located at dist/intel-optimization-for-horovod-*.tar.gz
+# will get a package located at dist/intel_optimization_for_horovod-*.tar.gz
 $ python setup.py sdist
 
-$ CC=icx CXX=icpx \
-pip install --no-cache-dir intel-optimization-for-horovod -f dist/intel-optimization-for-horovod-*.tar.gz
+$ CC=icx CXX=icpx pip install --no-cache-dir dist/*.tar.gz
 ```
 
 - Option 2: build python wheels and install
 
 ```bash
-$ CC=icx CXX=icpx \
-python setup.py bdist_wheel
+$ CC=icx CXX=icpx python setup.py bdist_wheel
 
-$ pip install dist/intel-optimization-for-horovod-*.whl
+$ pip install dist/*.whl
 ```
 
 
