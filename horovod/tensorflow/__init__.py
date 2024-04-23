@@ -509,7 +509,10 @@ except AttributeError:
     try:
         _SessionRunHook = tf.train.SessionRunHook
     except AttributeError:
-        _SessionRunHook = None
+        try:
+            _SessionRunHook = tf.compat.v1.train.SessionRunHook
+        except AttributeError:
+            _SessionRunHook = None
 
 if _SessionRunHook is not None and _get_default_graph is not None:
     class BroadcastGlobalVariablesHook(_SessionRunHook):
