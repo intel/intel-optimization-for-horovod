@@ -770,6 +770,9 @@ Status CCLGPUReducescatter::Execute(std::vector<TensorTableEntry>& entries,
     if (entries.size() == 1) {
       // Unfused prescaled: Send from fusion buffer, receive at output tensor
       buffer_data = (void*)first_entry.output->data();
+    } else {
+      buffer_data = reinterpret_cast<int8_t*>(buffer_data) +
+                    global_rank * recvcounts[0] * element_size;
     }
 
     if (global_state_->timeline.Initialized()) {
