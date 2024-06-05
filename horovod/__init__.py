@@ -1,3 +1,3 @@
 from horovod.runner import run
 
-__version__ = '0.28.1.4'
+__version__ = '0.28.1.5'
