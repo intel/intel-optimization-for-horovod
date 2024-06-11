@@ -86,13 +86,13 @@ void LoadXpuLibrary() {
   if (!UseTFNPD())
     return;
 
-  libintel_xla_handle = dlopen("libintel_xla.so", RTLD_NOW | RTLD_LOCAL);
+  libintel_xla_handle = dlopen("libintel_extension_for_openxla.so", RTLD_NOW | RTLD_LOCAL);
   if (!libintel_xla_handle) {
     const char* error_msg = dlerror();
     throw std::runtime_error(std::string(error_msg) +
                              ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX required package "
-                             "intel_extension_for_tensorflow >= 2.15.0. Please "
+                             "intel_extension_for_tensorflow >= 2.16.0. Please "
                              "install proper version.");
   }
 
