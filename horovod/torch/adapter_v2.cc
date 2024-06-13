@@ -27,6 +27,11 @@
 #include "device_util.h"
 #include "ready_event.h"
 
+// Pytorch 2.3 and above
+#if HAVE_SYCL && TORCH_VERSION_MAJOR > 1 && TORCH_VERSION_MINOR > 2
+#include <c10/xpu/XPUStream.h>
+#endif
+
 #if HAVE_SYCL
 #define KGPU ::torch::kXPU
 #elif HAVE_CUDA
@@ -176,8 +181,14 @@ Status TorchOpContext::AllocateOutput(int output_index, TensorShape shape,
       auto stream = c10::cuda::getCurrentCUDAStream(device_);
       C10_CUDA_CHECK(cudaStreamSynchronize(stream));
 #else
+    // Pytorch 2.3 and above
+#if TORCH_VERSION_MAJOR > 1 && TORCH_VERSION_MINOR > 2
+      auto stream = c10::xpu::getCurrentXPUStream(device_);
+      stream.synchronize();
+#else
       auto stream = SYCLQueue();
       stream.wait();
+#endif
 #endif
     } else {
       *event = std::shared_ptr<common::ReadyEvent>(RecordReadyEvent(device_));
@@ -204,8 +215,14 @@ Status TorchOpContext::AllocateZeros(int64_t num_elements, DataType dtype,
       auto stream = c10::cuda::getCurrentCUDAStream(device_);
       C10_CUDA_CHECK(cudaStreamSynchronize(stream));
 #else
+    // Pytorch 2.3 and above
+#if TORCH_VERSION_MAJOR > 1 && TORCH_VERSION_MINOR > 2
+      auto stream = c10::xpu::getCurrentXPUStream(device_);
+      stream.synchronize();
+#else
       auto stream = SYCLQueue();
       stream.wait();
+#endif
 #endif
   }
 #endif
@@ -218,6 +235,9 @@ Framework TorchOpContext::framework() const {
 
 #if HAVE_GPU && HAVE_SYCL
 sycl::queue TorchOpContext::SYCLQueue() const {
+#if TORCH_VERSION_MAJOR > 1 && TORCH_VERSION_MINOR > 2
+  return c10::xpu::getCurrentXPUStream(device_).queue();
+#else
   ::torch::DeviceType device_type =
       device_ != CPU_DEVICE_ID ? KGPU : ::torch::kCPU;
   c10::impl::VirtualGuardImpl impl(device_type);
@@ -241,6 +261,7 @@ sycl::queue TorchOpContext::SYCLQueue() const {
   /* release python thread */
   PyGILState_Release(gstate);
   return *qResult;
+#endif
 }
 #endif
 

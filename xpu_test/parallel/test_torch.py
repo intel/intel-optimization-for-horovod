@@ -568,7 +568,7 @@ class TorchTests(unittest.TestCase):
         # Same rank, different dimension
         dims = [17] * 3
         if rank % 2 == 0:
-            tensor = torch.xpu.FloatTensor(*dims)
+            tensor = torch.FloatTensor(*dims).xpu('xpu:{}'.format(hvd.local_rank()))
         else:
             tensor = torch.FloatTensor(*dims)
 
@@ -772,7 +772,7 @@ class TorchTests(unittest.TestCase):
 
         hvd.init()
         tensors = [torch.FloatTensor(
-            10) if i % 2 else torch.xpu.FloatTensor(10) for i in range(5)]
+            10) if i % 2 else torch.FloatTensor(10).xpu('xpu:{}'.format(hvd.local_rank())) for i in range(5)]
         try:
             hvd.grouped_allreduce(tensors, average=False)
             assert False, 'hvd.allreduce did not throw error'
