@@ -1,3 +1,8 @@
+import torch
+try:
+    import intel_extension_for_pytorch
+except:
+    pass
 import argparse
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
@@ -28,12 +33,15 @@ parser.add_argument('--num-iters', type=int, default=10,
 
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
+parser.add_argument('--no-xpu', action='store_true', default=False,
+                    help='disables XPU training')
 
 parser.add_argument('--use-adasum', action='store_true', default=False,
                     help='use adasum algorithm to do reduction')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+args.xpu = not args.no_xpu and torch.xpu.is_available()
 
 hvd.init()
 
@@ -56,6 +64,9 @@ if args.cuda:
     if args.use_adasum and hvd.nccl_built():
         lr_scaler = hvd.local_size()
 
+if args.xpu:   
+    model.to(f'xpu:{hvd.local_rank()}')
+
 optimizer = optim.SGD(model.parameters(), lr=0.01 * lr_scaler)
 
 # Horovod: (optional) compression algorithm.
@@ -77,6 +88,8 @@ target = torch.LongTensor(args.batch_size).random_() % 1000
 if args.cuda:
     data, target = data.cuda(), target.cuda()
 
+if args.xpu:
+    data, target = data.to(f'xpu:{hvd.local_rank()}'), target.to(f'xpu:{hvd.local_rank()}')
 
 def benchmark_step():
     optimizer.zero_grad()
@@ -94,7 +107,11 @@ def log(s, nl=True):
 
 log('Model: %s' % args.model)
 log('Batch size: %d' % args.batch_size)
-device = 'GPU' if args.cuda else 'CPU'
+device = 'CPU'
+if args.cuda:
+    device = 'GPU'
+elif args.xpu:
+    device = 'XPU'
 log('Number of %ss: %d' % (device, hvd.size()))
 
 # Warm-up
