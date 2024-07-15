@@ -1,0 +1,13 @@
+diff --git a/include/flatbuffers/stl_emulation.h b/include/flatbuffers/stl_emulation.h
+index 70e5dc94..9b93170b 100644
+--- a/include/flatbuffers/stl_emulation.h
++++ b/include/flatbuffers/stl_emulation.h
+@@ -625,7 +625,7 @@ class span FLATBUFFERS_FINAL_CLASS {
+  private:
+   // This is a naive implementation with 'count_' member even if (Extent != dynamic_extent).
+   pointer const data_;
+-  const size_type count_;
++  size_type count_;
+ };
+ 
+  #if !defined(FLATBUFFERS_SPAN_MINIMAL)
