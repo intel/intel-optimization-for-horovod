@@ -215,6 +215,9 @@ tpp_trg_path = os.path.join(os.getcwd(), "horovod/third-party-programs")
 if os.path.exists(tpp_src_path):
     os.system("cp -rf {} {}".format(tpp_src_path, tpp_trg_path))
 
+# apply patchs
+os.system("pushd third_party/flatbuffers && git restore . && git apply ../flatbuffers.patch && popd")
+
 setup(name='intel_optimization_for_horovod',
       version=get_package_version(),
       packages=find_packages(),
