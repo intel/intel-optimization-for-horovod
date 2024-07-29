@@ -86,14 +86,21 @@ void LoadXpuLibrary() {
   if (!UseTFNPD())
     return;
 
-  libintel_xla_handle = dlopen("libintel_extension_for_openxla.so", RTLD_NOW | RTLD_LOCAL);
+  const char* libintel_xla_name = "libintel_extension_for_openxla.so";
+
+  libintel_xla_handle = dlopen(libintel_xla_name, RTLD_NOW | RTLD_LOCAL);
   if (!libintel_xla_handle) {
-    const char* error_msg = dlerror();
-    throw std::runtime_error(std::string(error_msg) +
-                             ". Horovod.TensorFlow module built with "
-                             "NextPluggableDevice for ITEX required package "
-                             "intel_extension_for_tensorflow >= 2.16.0. Please "
-                             "install proper version.");
+    libintel_xla_name = "libintel_xla.so";
+    libintel_xla_handle = dlopen(libintel_xla_name, RTLD_NOW | RTLD_LOCAL);
+    if (!libintel_xla_handle) {
+      const char* error_msg = dlerror();
+      throw std::runtime_error(
+          std::string(error_msg) +
+          ". Horovod.TensorFlow module built with "
+          "NextPluggableDevice for ITEX required package "
+          "intel_extension_for_tensorflow >= 2.15.0. Please "
+          "install proper version.");
+    }
   }
 
   C_ITEXGetStreamFromPjRtDevice =
@@ -105,8 +112,8 @@ void LoadXpuLibrary() {
     throw std::runtime_error(std::string(error_msg) +
                              ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX failed to load"
-                             "function 'C_ITEXGetStreamFromPjRtDevice' from"
-                             "libintel_xla.so.");
+                             "function 'C_ITEXGetStreamFromPjRtDevice' from " +
+                             std::string(libintel_xla_name) + ".");
   }
 
   C_ITEXOpaqueDataPointerFromPjRtBuffer =
@@ -119,8 +126,8 @@ void LoadXpuLibrary() {
         std::string(error_msg) +
         ". Horovod.TensorFlow module built with "
         "NextPluggableDevice for ITEX failed to load"
-        "function 'C_ITEXOpaqueDataPointerFromPjRtBuffer' from"
-        "libintel_xla.so.");
+        "function 'C_ITEXOpaqueDataPointerFromPjRtBuffer' from " +
+        std::string(libintel_xla_name) + ".");
   }
 
   C_ITEXCreatePjRtBuffer = reinterpret_cast<decltype(C_ITEXCreatePjRtBuffer)>(
@@ -131,8 +138,8 @@ void LoadXpuLibrary() {
     throw std::runtime_error(std::string(error_msg) +
                              ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX failed to load"
-                             "function 'C_ITEXCreatePjRtBuffer' from"
-                             "libintel_xla.so.");
+                             "function 'C_ITEXCreatePjRtBuffer' from " +
+                             std::string(libintel_xla_name) + ".");
   }
 
   C_ITEXCreateSEPjRtBuffer =
@@ -144,8 +151,8 @@ void LoadXpuLibrary() {
     throw std::runtime_error(std::string(error_msg) +
                              ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX failed to load"
-                             "function 'C_ITEXCreateSEPjRtBuffer' from"
-                             "libintel_xla.so.");
+                             "function 'C_ITEXCreateSEPjRtBuffer' from " +
+                             std::string(libintel_xla_name) + ".");
   }
 
   C_RegisterCustomCallTarget =
@@ -157,8 +164,8 @@ void LoadXpuLibrary() {
     throw std::runtime_error(std::string(error_msg) +
                              ". Horovod.TensorFlow module built with "
                              "NextPluggableDevice for ITEX failed to load"
-                             "function 'C_RegisterCustomCallTarget' from"
-                             "libintel_xla.so.");
+                             "function 'C_RegisterCustomCallTarget' from " +
+                             std::string(libintel_xla_name) + ".");
   }
 }
 
