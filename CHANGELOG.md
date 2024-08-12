@@ -18,9 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.28.1.5] - YYYY-MM-DD
 
-### Fixed
+### Changed
 
-- Fixed ReduceScatter errors caused by OneCCL api change.
+- Upgraded Driver version and OneAPI version.
+- Turned on TensorFlow NextPluggableDevice by default.
+- Fixed inplace reduce_scatter for OneCCL api change.
 
 ## [0.28.1.4] - YYYY-MM-DD
 

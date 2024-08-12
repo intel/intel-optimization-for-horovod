@@ -18,7 +18,7 @@ Install Intel GPU driver
 Refer to `Installation Guides <https://dgpu-docs.intel.com/installation-guides/index.html#intel-data-center-gpu-max-series>`__
 for latest driver installation. 
 
-Recommend to install verified driver version `803 <https://dgpu-docs.intel.com/releases/LTS_803.29_20240131.html>`__ for hardware platforms: 
+Recommend to install verified driver version `803 <https://dgpu-docs.intel.com/releases/LTS_803.63_20240617.html>`__ for hardware platforms: 
 Intel® Data Center GPU Max Series and Intel® Data Center GPU Flex Series 170.
 
 
@@ -33,8 +33,8 @@ There are necessary 3 components for horovod on Intel GPU:
 
 .. code-block:: bash
 
-    $ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/fdc7a2bc-b7a8-47eb-8876-de6201297144/l_BaseKit_p_2024.1.0.596.sh
-    $ sudo sh ./l_BaseKit_p_2024.1.0.596.sh
+    $ wget https://registrationcenter-download.intel.com/akdlm/IRC_NAS/e6ff8e9c-ee28-47fb-abd7-5c524c983e1c/l_BaseKit_p_2024.2.1.100_offline.sh
+    $ sudo sh l_BaseKit_p_2024.2.1.100_offline.sh
 
 For any more details, follow the `procedures <https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html>`__.
    
@@ -51,7 +51,7 @@ Install Deep Learning Frameworks
 
 To bring Intel GPU devices into **TensorFlow** community for AI workload acceleration, Intel promoted a new user visible ``XPU`` device type as a device abstraction for Intel computation architectures and implemented corresponding device runtime in **Intel® Extension for TensorFlow**.
 
-To use **TensorFlow** and **Intel® Extension for TensorFlow**, please follow `Tensorflow 2.15.0 installation <https://www.tensorflow.org/install>`__  and `Intel® Extension for TensorFlow* 2.15 installation <https://github.com/intel/intel-extension-for-tensorflow/tree/r2.15#install>`__.
+To use **TensorFlow** and **Intel® Extension for TensorFlow**, please follow `Tensorflow 2.15.1 installation <https://www.tensorflow.org/install>`__  and `Intel® Extension for TensorFlow* 2.15 installation <https://github.com/intel/intel-extension-for-tensorflow/tree/r2.15#install>`__.
 
 Install the Horovod pip package
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
