@@ -139,13 +139,16 @@ void MPIController::RecvReadyTensors(std::vector<std::string>& ready_to_reduce,
   // ranks at this tick.
 
   // 1. Get message lengths from every rank.
-  auto recvcounts = new int[size_];
+  auto recvcounts = new MPI_Count[size_];
   recvcounts[0] = 0;
-  MPI_Gather(MPI_IN_PLACE, 1, MPI_INT, recvcounts, 1, MPI_INT, RANK_ZERO,
-             mpi_ctx_.mpi_comm);
+  int ret_code = MPI_Gather(MPI_IN_PLACE, 1, MPI_COUNT, recvcounts, 1, MPI_COUNT, RANK_ZERO,
+                            mpi_ctx_.mpi_comm);
+  if (ret_code != MPI_SUCCESS) {
+    throw std::runtime_error("MPI_Gather failed, see MPI output for details.");
+  }
 
   // 2. Compute displacements.
-  auto displcmnts = new int[size_];
+  auto displcmnts = new MPI_Aint[size_];
   size_t total_size = 0;
   for (int i = 0; i < size_; ++i) {
     if (i == 0) {
@@ -156,10 +159,15 @@ void MPIController::RecvReadyTensors(std::vector<std::string>& ready_to_reduce,
     total_size += recvcounts[i];
   }
 
+  LOG(DEBUG) << "Total size of messages in bytes to be received from all ranks is " << total_size;
+
   // 3. Collect messages from every rank.
   auto buffer = new uint8_t[total_size];
-  MPI_Gatherv(nullptr, 0, MPI_BYTE, buffer, recvcounts, displcmnts, MPI_BYTE,
-              RANK_ZERO, mpi_ctx_.mpi_comm);
+  ret_code = MPI_Gatherv_c(nullptr, 0, MPI_BYTE, buffer, recvcounts, displcmnts, MPI_BYTE,
+                           RANK_ZERO, mpi_ctx_.mpi_comm);
+  if (ret_code != MPI_SUCCESS) {
+    throw std::runtime_error("MPI_Gatherv_c failed, see MPI output for details.");
+  }
 
   // 4. Process messages.
   // create a dummy list for rank 0
@@ -181,35 +189,41 @@ void MPIController::SendFinalTensors(ResponseList& response_list) {
   // Notify all nodes which tensors we'd like to reduce at this step.
   std::string encoded_response;
   ResponseList::SerializeToString(response_list, encoded_response);
-  int encoded_response_length = (int)encoded_response.length() + 1;
-  MPI_Bcast(&encoded_response_length, 1, MPI_INT, RANK_ZERO, mpi_ctx_.mpi_comm);
+  size_t encoded_response_length = (size_t)encoded_response.length() + 1;
+  int ret_code = MPI_Bcast(&encoded_response_length, 1, MPI_COUNT, RANK_ZERO, mpi_ctx_.mpi_comm);
+  if (ret_code != MPI_SUCCESS) {
+    throw std::runtime_error("MPI_Bcast failed, see MPI output for details.");
+  }
 
-  MPI_Bcast((void*)encoded_response.c_str(), encoded_response_length, MPI_BYTE,
-            RANK_ZERO, mpi_ctx_.mpi_comm);
+  ret_code = MPI_Bcast_c((void*)encoded_response.c_str(), encoded_response_length, MPI_BYTE,
+                         RANK_ZERO, mpi_ctx_.mpi_comm);
+  if (ret_code != MPI_SUCCESS) {
+    throw std::runtime_error("MPI_Bcast_c failed, see MPI output for details.");
+  }
 }
 
 void MPIController::SendReadyTensors(RequestList& message_list) {
   std::string encoded_message;
   RequestList::SerializeToString(message_list, encoded_message);
-  int encoded_message_length = (int)encoded_message.length() + 1;
-  int ret_code = MPI_Gather(&encoded_message_length, 1, MPI_INT, nullptr, 1,
-                            MPI_INT, RANK_ZERO, mpi_ctx_.mpi_comm);
+  size_t encoded_message_length = (size_t)encoded_message.length() + 1;
+  int ret_code = MPI_Gather(&encoded_message_length, 1, MPI_COUNT, nullptr, 1,
+                            MPI_COUNT, RANK_ZERO, mpi_ctx_.mpi_comm);
   if (ret_code != MPI_SUCCESS) {
     throw std::runtime_error("MPI_Gather failed, see MPI output for details.");
   }
 
-  ret_code = MPI_Gatherv((void*)encoded_message.c_str(), encoded_message_length,
-                         MPI_BYTE, nullptr, nullptr, nullptr, MPI_BYTE,
-                         RANK_ZERO, mpi_ctx_.mpi_comm);
+  ret_code = MPI_Gatherv_c((void*)encoded_message.c_str(), encoded_message_length,
+                            MPI_BYTE, nullptr, nullptr, nullptr, MPI_BYTE,
+                            RANK_ZERO, mpi_ctx_.mpi_comm);
   if (ret_code != MPI_SUCCESS) {
-    throw std::runtime_error("MPI_Gather failed, see MPI output for details.");
+    throw std::runtime_error("MPI_Gatherv_c failed, see MPI output for details.");
   }
 }
 
 void MPIController::RecvFinalTensors(ResponseList& response_list) {
-  int msg_length;
+  MPI_Count msg_length;
   int ret_code =
-      MPI_Bcast(&msg_length, 1, MPI_INT, RANK_ZERO, mpi_ctx_.mpi_comm);
+      MPI_Bcast(&msg_length, 1, MPI_COUNT, RANK_ZERO, mpi_ctx_.mpi_comm);
   if (ret_code != MPI_SUCCESS) {
     throw std::runtime_error(
         "MPI_Broadcast failed, see MPI output for details.");
@@ -217,10 +231,10 @@ void MPIController::RecvFinalTensors(ResponseList& response_list) {
 
   auto buffer = new uint8_t[msg_length];
   ret_code =
-      MPI_Bcast(buffer, msg_length, MPI_BYTE, RANK_ZERO, mpi_ctx_.mpi_comm);
+      MPI_Bcast_c(buffer, msg_length, MPI_BYTE, RANK_ZERO, mpi_ctx_.mpi_comm);
   if (ret_code != MPI_SUCCESS) {
     throw std::runtime_error(
-        "MPI_Broadcast failed, see MPI output for details.");
+        "MPI_Broadcast_c failed, see MPI output for details.");
   }
   ResponseList::ParseFromBytes(response_list, buffer);
   delete[] buffer;
