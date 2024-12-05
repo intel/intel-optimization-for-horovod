@@ -296,9 +296,17 @@ void MPIContext::FinalizeWithoutEnv() {
 }
 
 void MPIContextManager::EnvInitialize(int mpi_threads_required) {
-  int mpi_threads_provided;
-  MPI_Init_thread(nullptr, nullptr, mpi_threads_required,
-                  &mpi_threads_provided);
+  int mpi_threads_provided = -1;
+  LOG(DEBUG) << "Requested level of MPI thread support " << mpi_threads_required;
+  auto ret_code = MPI_Init_thread(nullptr, nullptr, mpi_threads_required,
+                    &mpi_threads_provided);
+  if (ret_code != MPI_SUCCESS) {
+    throw std::runtime_error("MPI_Init_thread failed, see MPI output for details.");
+  }
+  LOG(DEBUG) << "Provided level of MPI thread support " << mpi_threads_provided;
+  if (mpi_threads_required > mpi_threads_provided) {
+    throw std::runtime_error("Failed to get required level of thread support from MPI.");
+  }
 }
 
 void MPIContextManager::EnvFinalize() {
