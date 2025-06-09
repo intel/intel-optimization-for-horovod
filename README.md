@@ -56,4 +56,4 @@ The example commands below show how to run distributed training.
     ```
 
 ### Running Intel® Optimization for Horovod* with tensorflow on Intel GPU
-It is easy to train models with Intel® Extension for TensorFlow. You can refer to [tensorflow examples](xpu_docs/tensorflow_example.md) for more details.
+It is easy to train models with Intel® Extension for TensorFlow. You can refer to [tensorflow examples](xpu_docs/tensorflow_example.md) for more details
